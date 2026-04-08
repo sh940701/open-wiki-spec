@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+openspec/
+.serena/
+.claude/settings.json
+.claude/settings.local.json
+docs/
+.ows-cache/
+*.tgz
