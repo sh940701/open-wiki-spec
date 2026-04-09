@@ -1,3 +1,4 @@
+import * as fs from 'node:fs';
 import { join, basename, resolve } from 'node:path';
 import type {
   ApplyOptions,
@@ -24,44 +25,79 @@ const AGENT_DRIVEN_OPS = new Set(['MODIFIED', 'ADDED']);
 const LOCK_FILENAME = '.ows-lock';
 const LOCK_STALE_MS = 5 * 60 * 1000; // 5 minutes
 
+/**
+ * Default atomic exclusive file create using fs.openSync with O_CREAT|O_EXCL ('wx' flag).
+ * Throws with code EEXIST if the file already exists — preventing race conditions.
+ */
+function defaultExclusiveCreateFile(filePath: string, content: string): void {
+  const fd = fs.openSync(filePath, 'wx');
+  try {
+    fs.writeSync(fd, content);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 function acquireLock(vaultRoot: string, deps: ApplyDeps): boolean {
   const lockPath = join(vaultRoot, 'wiki', LOCK_FILENAME);
-  if (deps.fileExists(lockPath)) {
-    // Check if lock is stale (PID dead or timestamp > 5 minutes old)
-    try {
-      const content = deps.readFile(lockPath);
-      const parsed = JSON.parse(content) as { pid?: number; timestamp?: string };
-      const lockTime = parsed.timestamp ? new Date(parsed.timestamp).getTime() : 0;
-      const isStaleByTime = Date.now() - lockTime > LOCK_STALE_MS;
-      let isStaleByPid = false;
+  const lockContent = JSON.stringify({ pid: process.pid, timestamp: new Date().toISOString() });
+  const exclusiveCreate = deps.exclusiveCreateFile ?? defaultExclusiveCreateFile;
 
-      if (parsed.pid) {
-        try {
-          // process.kill(pid, 0) throws if process doesn't exist
-          process.kill(parsed.pid, 0);
-        } catch {
-          isStaleByPid = true;
-        }
-      }
-
-      if (isStaleByTime || isStaleByPid) {
-        // Force-remove stale lock and retry
-        if (deps.deleteFile) {
-          deps.deleteFile(lockPath);
-        }
-      } else {
-        return false;
-      }
-    } catch {
-      // If we can't parse the lock, treat as stale and recover
-      if (deps.deleteFile) {
-        try { deps.deleteFile(lockPath); } catch { /* swallow */ }
-      }
+  try {
+    // Atomic exclusive create — fails with EEXIST if lock already exists
+    exclusiveCreate(lockPath, lockContent);
+    return true;
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') {
+      // Unexpected error (permissions, missing directory, etc.)
+      return false;
     }
   }
-  const lockContent = JSON.stringify({ pid: process.pid, timestamp: new Date().toISOString() });
-  deps.writeFile(lockPath, lockContent);
-  return true;
+
+  // Lock file exists — check if stale
+  try {
+    const content = deps.readFile(lockPath);
+    const parsed = JSON.parse(content) as { pid?: number; timestamp?: string };
+    const lockTime = parsed.timestamp ? new Date(parsed.timestamp).getTime() : 0;
+    const isStaleByTime = Date.now() - lockTime > LOCK_STALE_MS;
+    let isStaleByPid = false;
+
+    if (parsed.pid) {
+      try {
+        // process.kill(pid, 0) throws if process doesn't exist
+        process.kill(parsed.pid, 0);
+      } catch {
+        isStaleByPid = true;
+      }
+    }
+
+    if (isStaleByTime || isStaleByPid) {
+      // Remove stale lock and retry atomically
+      if (deps.deleteFile) {
+        deps.deleteFile(lockPath);
+      }
+      try {
+        exclusiveCreate(lockPath, lockContent);
+        return true;
+      } catch {
+        // Another process grabbed the lock between delete and create
+        return false;
+      }
+    }
+
+    return false;
+  } catch {
+    // If we can't parse the lock, treat as stale and recover
+    if (deps.deleteFile) {
+      try { deps.deleteFile(lockPath); } catch { /* swallow */ }
+    }
+    try {
+      exclusiveCreate(lockPath, lockContent);
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }
 
 function releaseLock(vaultRoot: string, deps: ApplyDeps): void {

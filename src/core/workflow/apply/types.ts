@@ -148,4 +148,9 @@ export interface ApplyDeps {
   ensureDir: (dirPath: string) => void;
   /** Delete a file. Used for atomic write cleanup. Optional for backward compat. */
   deleteFile?: (filePath: string) => void;
+  /**
+   * Atomically create a file with exclusive access (fails if file exists).
+   * Used for lock acquisition. Defaults to fs.openSync(path, 'wx') when not provided.
+   */
+  exclusiveCreateFile?: (filePath: string, content: string) => void;
 }

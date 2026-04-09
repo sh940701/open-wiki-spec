@@ -46,6 +46,7 @@ function makeDeps(overrides: Partial<ApplyDeps> = {}): ApplyDeps {
     fileExists: vi.fn().mockReturnValue(false),
     moveFile: vi.fn(),
     ensureDir: vi.fn(),
+    exclusiveCreateFile: vi.fn(),
     ...overrides,
   };
 }

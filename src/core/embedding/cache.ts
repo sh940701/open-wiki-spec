@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
+import { assertInsideVault } from '../../utils/path-safety.js';
 
 export interface EmbeddingCacheEntry {
   vector: number[];

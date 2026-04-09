@@ -2,6 +2,7 @@
  * Query note creator.
  * Builds Query note markdown from investigation inputs.
  */
+import { stringify as yamlStringify } from 'yaml';
 import type { QueryNoteInput } from './types.js';
 
 /**
@@ -25,53 +26,45 @@ export function createQueryNote(input: QueryNoteInput): { path: string; content:
 }
 
 function buildFrontmatter(id: string, input: QueryNoteInput): string {
-  const lines: string[] = ['---'];
-  lines.push('type: query');
-  lines.push(`id: ${id}`);
-  lines.push('status: active');
-  lines.push(`question: "${escapeYaml(input.question)}"`);
+  const data: Record<string, unknown> = {
+    type: 'query',
+    id,
+    status: 'active',
+    question: input.question,
+  };
 
   if (input.relatedFeatures && input.relatedFeatures.length > 0) {
-    lines.push('features:');
-    for (const f of input.relatedFeatures) lines.push(`  - "${f}"`);
+    data.features = input.relatedFeatures;
   }
   if (input.relatedSystems && input.relatedSystems.length > 0) {
-    lines.push('systems:');
-    for (const s of input.relatedSystems) lines.push(`  - "${s}"`);
+    data.systems = input.relatedSystems;
   }
   if (input.relatedChanges && input.relatedChanges.length > 0) {
-    lines.push('changes:');
-    for (const c of input.relatedChanges) lines.push(`  - "${c}"`);
+    data.changes = input.relatedChanges;
   }
   if (input.relatedDecisions && input.relatedDecisions.length > 0) {
-    lines.push('decisions:');
-    for (const d of input.relatedDecisions) lines.push(`  - "${d}"`);
+    data.decisions = input.relatedDecisions;
   }
   if (input.relatedSources && input.relatedSources.length > 0) {
-    lines.push('sources:');
-    for (const s of input.relatedSources) lines.push(`  - "${s}"`);
+    data.sources = input.relatedSources;
   }
   if (input.relatedQueries && input.relatedQueries.length > 0) {
-    lines.push('related_queries:');
-    for (const q of input.relatedQueries) lines.push(`  - "${q}"`);
+    data.related_queries = input.relatedQueries;
   }
 
-  lines.push('consulted:');
-  for (const c of input.consultedNotes) lines.push(`  - "[[${c}]]"`);
+  data.consulted = input.consultedNotes.map(c => `[[${c}]]`);
 
-  lines.push('tags:');
-  lines.push('  - query');
+  const tags = ['query'];
   if (input.tags) {
     for (const t of input.tags) {
-      if (t !== 'query') lines.push(`  - ${t}`);
+      if (t !== 'query') tags.push(t);
     }
   }
+  data.tags = tags;
 
-  lines.push(`created_at: "${new Date().toLocaleDateString('en-CA')}"`);
-  lines.push('---');
-  lines.push('');
+  data.created_at = new Date().toLocaleDateString('en-CA');
 
-  return lines.join('\n');
+  return `---\n${yamlStringify(data).trimEnd()}\n---\n\n`;
 }
 
 function buildBody(input: QueryNoteInput): string {
@@ -175,7 +168,3 @@ function formatDate(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
-/** Escape special characters in YAML strings */
-function escapeYaml(s: string): string {
-  return s.replace(/"/g, '\\"');
-}

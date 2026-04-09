@@ -8,6 +8,7 @@ import type { Command } from 'commander';
 import { discoverVaultPath } from '../vault-discovery.js';
 import { queryWorkflow } from '../../core/workflow/query/query.js';
 import { createQueryNote } from '../../core/workflow/query/query-note-creator.js';
+import { safeWriteFile } from '../../utils/path-safety.js';
 
 export function registerQueryCommand(program: Command): void {
   program
@@ -39,7 +40,7 @@ export function registerQueryCommand(program: Command): void {
           if (!fs.existsSync(noteDir)) {
             fs.mkdirSync(noteDir, { recursive: true });
           }
-          fs.writeFileSync(notePath, note.content, 'utf-8');
+          safeWriteFile(notePath, note.content, vaultPath);
           savedPath = note.path;
         }
 

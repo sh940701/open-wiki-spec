@@ -3,6 +3,7 @@
  */
 import type { ScannedSpec, ConversionResult } from './types.js';
 import * as path from 'node:path';
+import { sanitizeMigrationId, safeYamlScalar, safeYamlQuoted } from './sanitize.js';
 
 const REQUIREMENT_HEADING_RE = /^###\s+Requirement:\s*(.+)$/;
 const SCENARIO_HEADING_RE = /^####\s+Scenario:\s*(.+)$/;
@@ -14,7 +15,7 @@ const WHY_SECTION_RE = /^##\s+Why$/m;
  * Convert a single OpenSpec spec into a Feature note.
  */
 export function convertSpec(spec: ScannedSpec, systemRef: string): ConversionResult {
-  const id = spec.capability;
+  const id = sanitizeMigrationId(spec.capability);
   const title = formatTitle(spec.capability);
   const purpose = extractPurpose(spec.content);
   const requirementsBlock = extractRequirementsBlock(spec.content);
@@ -71,10 +72,10 @@ function buildFeatureNote(opts: {
 }): string {
   return `---
 type: feature
-id: ${opts.id}
+id: ${safeYamlScalar(opts.id)}
 status: active
 systems:
-  - "${opts.systemRef}"
+  - ${safeYamlQuoted(opts.systemRef)}
 sources: []
 decisions: []
 changes: []

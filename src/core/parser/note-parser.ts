@@ -96,26 +96,34 @@ function computeBodyHash(body: string): string {
 
 /**
  * Recursively walk a frontmatter object and extract wikilinks from string values.
+ * Protects against YAML alias cycles with a visited set and depth limit.
  */
 function extractWikilinksFromObject(
   obj: Record<string, unknown>,
   location: 'frontmatter' | 'body',
 ): { wikilinks: WikilinkOccurrence[]; errors: ParseError[] } {
+  const MAX_DEPTH = 10;
   const allWikilinks: WikilinkOccurrence[] = [];
   const allErrors: ParseError[] = [];
+  const visited = new WeakSet<object>();
 
-  function walk(value: unknown): void {
+  function walk(value: unknown, depth: number): void {
+    if (depth > MAX_DEPTH) return;
     if (typeof value === 'string') {
       const { wikilinks, errors } = extractWikilinks(value, location, 1);
       allWikilinks.push(...wikilinks);
       allErrors.push(...errors);
     } else if (Array.isArray(value)) {
-      for (const item of value) walk(item);
+      if (visited.has(value)) return;
+      visited.add(value);
+      for (const item of value) walk(item, depth + 1);
     } else if (typeof value === 'object' && value !== null) {
-      for (const v of Object.values(value)) walk(v);
+      if (visited.has(value)) return;
+      visited.add(value);
+      for (const v of Object.values(value)) walk(v, depth + 1);
     }
   }
 
-  walk(obj);
+  walk(obj, 0);
   return { wikilinks: allWikilinks, errors: allErrors };
 }

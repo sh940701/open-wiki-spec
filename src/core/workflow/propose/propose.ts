@@ -16,6 +16,7 @@ import { computeSemanticRecall } from '../../embedding/semantic-recall.js';
 import { createEmbedder, DEFAULT_MODEL } from '../../embedding/embedder.js';
 import { loadEmbeddingCache, createEmptyCache, saveEmbeddingCache, getCachedVector, setCachedVector } from '../../embedding/cache.js';
 import * as path from 'node:path';
+import { assertInsideVault } from '../../../utils/path-safety.js';
 
 /**
  * Map local intent aliases to RetrievalQuery intent.
@@ -141,6 +142,7 @@ export async function propose(
         }
       }
       if (cacheUpdated && !options.dryRun) {
+        assertInsideVault(cachePath, options.vaultRoot);
         saveEmbeddingCache(cachePath, cache);
       }
 

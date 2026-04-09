@@ -3,6 +3,7 @@
  */
 import * as path from 'node:path';
 import type { ScannedChange, ConversionResult } from './types.js';
+import { sanitizeMigrationId, safeYamlScalar, safeYamlQuoted } from './sanitize.js';
 
 const WHY_SECTION_RE = /^##\s+Why$/m;
 const WHAT_CHANGES_RE = /^##\s+What\s+Changes$/m;
@@ -20,7 +21,7 @@ export function convertChange(
   systemRefMap: Map<string, string>,
 ): { changeNote: ConversionResult; decisionNote: ConversionResult | null; warnings: string[] } {
   const warnings: string[] = [];
-  const id = change.name;
+  const id = sanitizeMigrationId(change.name);
   const title = formatChangeTitle(change.name);
 
   // Extract proposal sections
@@ -147,10 +148,10 @@ function buildChangeNote(opts: {
 
   return `---
 type: change
-id: ${opts.id}
-status: ${opts.status}
-created_at: "${opts.createdAt}"
-feature: "${opts.featureRef}"
+id: ${safeYamlScalar(opts.id)}
+status: ${safeYamlScalar(opts.status)}
+created_at: ${safeYamlQuoted(opts.createdAt)}
+feature: ${safeYamlQuoted(opts.featureRef)}
 depends_on:
 ${dependsOnYaml || '  []'}
 touches:
@@ -199,7 +200,7 @@ ${opts.tasksBlock || '- [ ] Review migrated change'}
 }
 
 function buildDecisionNote(change: ScannedChange): ConversionResult {
-  const id = `decision-${change.name}`;
+  const id = `decision-${sanitizeMigrationId(change.name)}`;
   const title = formatChangeTitle(change.name);
   const context = extractSection(change.design ?? '', /^##\s+Context$/m) || '<!-- Context from design.md -->';
   const decisions = extractSection(change.design ?? '', /^##\s+Decisions?$/m) || change.design || '';
@@ -209,7 +210,7 @@ function buildDecisionNote(change: ScannedChange): ConversionResult {
 
   const content = `---
 type: decision
-id: ${id}
+id: ${safeYamlScalar(id)}
 status: active
 features: []
 changes:

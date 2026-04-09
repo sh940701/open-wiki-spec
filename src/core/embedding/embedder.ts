@@ -5,6 +5,14 @@
 
 export const DEFAULT_MODEL = 'Xenova/multilingual-e5-small';
 
+/**
+ * Pinned model revision (commit hash) on HuggingFace Hub.
+ * Update this hash when intentionally upgrading the model version.
+ * For air-gapped environments, set CreateEmbedderOptions.localModelPath
+ * to a local directory containing the model files instead.
+ */
+export const DEFAULT_MODEL_REVISION = 'bf4b30e4e5543f3949ad93f84e0b12c40feb1528';
+
 export type EmbedPipeline = (text: string) => Promise<number[]>;
 
 export interface Embedder {
@@ -20,6 +28,17 @@ export interface CreateEmbedderOptions {
   pipeline?: EmbedPipeline;
   /** Model name override. */
   model?: string;
+  /**
+   * Model revision (commit hash) to pin downloads to a specific version.
+   * Defaults to DEFAULT_MODEL_REVISION.
+   */
+  revision?: string;
+  /**
+   * Local filesystem path to a pre-downloaded model directory.
+   * When set, the model is loaded from disk instead of downloading from HuggingFace Hub.
+   * Recommended for air-gapped or security-sensitive environments.
+   */
+  localModelPath?: string;
 }
 
 /**
@@ -30,7 +49,13 @@ export interface CreateEmbedderOptions {
 export async function createEmbedder(
   options: CreateEmbedderOptions = {},
 ): Promise<Embedder> {
-  const { loadModel = true, pipeline: injectedPipeline, model = DEFAULT_MODEL } = options;
+  const {
+    loadModel = true,
+    pipeline: injectedPipeline,
+    model = DEFAULT_MODEL,
+    revision = DEFAULT_MODEL_REVISION,
+    localModelPath,
+  } = options;
 
   // If a mock pipeline is injected, use it directly
   if (injectedPipeline) {
@@ -49,8 +74,10 @@ export async function createEmbedder(
   // Try to load @huggingface/transformers dynamically
   try {
     const { pipeline } = await import('@huggingface/transformers');
-    const extractor = await pipeline('feature-extraction', model, {
+    const modelSource = localModelPath ?? model;
+    const extractor = await pipeline('feature-extraction', modelSource, {
       dtype: 'q8',
+      revision: localModelPath ? undefined : revision,
     });
 
     const embedFn: EmbedPipeline = async (text: string) => {
