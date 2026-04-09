@@ -75,10 +75,11 @@ export async function createEmbedder(
   try {
     const { pipeline } = await import('@huggingface/transformers');
     const modelSource = localModelPath ?? model;
-    const extractor = await pipeline('feature-extraction', modelSource, {
-      dtype: 'q8',
-      revision: localModelPath ? undefined : revision,
-    });
+    const pipelineOpts: Record<string, unknown> = { dtype: 'q8' };
+    if (!localModelPath && revision) {
+      pipelineOpts.revision = revision;
+    }
+    const extractor = await pipeline('feature-extraction', modelSource, pipelineOpts);
 
     const embedFn: EmbedPipeline = async (text: string) => {
       const output = await extractor(text, { pooling: 'mean', normalize: true });
