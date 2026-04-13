@@ -57,8 +57,8 @@ Apply a completed Change to canonical Feature notes, updating the wiki's current
    The apply engine programmatically modifies Feature notes:
    - **RENAMED**: Automatically renames the requirement in the Feature note. Fully automated.
    - **REMOVED**: Automatically removes the requirement from the Feature note. Fully automated.
-   - **MODIFIED**: Inserts a `<!-- OWS:MODIFIED -->` marker at the requirement location. The agent must then update the requirement text.
-   - **ADDED**: Inserts a `<!-- OWS:ADDED -->` marker in the Requirements section. The agent must then write the new requirement content.
+   - **MODIFIED**: Inserts a `<!-- MODIFIED by change: <changeId> -->` marker after the requirement heading. The agent must then update the requirement text.
+   - **ADDED**: Inserts a `<!-- ADDED by change: <changeId>. Fill in normative statement (SHALL/MUST) and scenarios (WHEN/THEN). -->` marker in the Requirements section. The agent must then write the new requirement content.
 
 5. **Show final state**
    ```bash

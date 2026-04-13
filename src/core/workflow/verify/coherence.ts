@@ -24,6 +24,22 @@ export function checkConflictsViaSequencing(
   // Delegate to sequencing engine (expects Map<string, IndexRecord>)
   const result = analyzeSequencing(index.records);
 
+  // Build a set of change-pair keys that have an actual requirement-level
+  // conflict so Feature-level `conflict_candidate` pairs that DON'T also
+  // hit a requirement collision can be surfaced as warnings instead of
+  // errors. Two Changes that touch the same Feature but modify disjoint
+  // requirements are serialization-unsafe (whoever applies second needs
+  // a rebase of base_fingerprint) but they do not step on each other's
+  // content — an error-level verdict was overly strict and caused
+  // false-positive CI failures.
+  const hasRequirementConflict = new Set<string>();
+  for (const c of result.requirement_conflicts) {
+    const a = c.change_a;
+    const b = c.change_b;
+    const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+    hasRequirementConflict.add(key);
+  }
+
   // Map pairwise touches severities to VerifyIssue
   for (const pair of result.pairwise_severities) {
     if (pair.severity === 'blocked') {
@@ -36,13 +52,28 @@ export function checkConflictsViaSequencing(
         suggestion: 'Resolve the dependency before proceeding.',
       });
     } else if (pair.severity === 'conflict_candidate') {
+      const pairKey =
+        pair.change_a < pair.change_b
+          ? `${pair.change_a}|${pair.change_b}`
+          : `${pair.change_b}|${pair.change_a}`;
+      const alsoRequirementLevel = hasRequirementConflict.has(pairKey);
       issues.push({
         dimension: 'coherence',
-        severity: 'error',
+        // Downgrade to warning when the Feature-level overlap does NOT
+        // coincide with a requirement-level collision. The pair is still
+        // worth surfacing because serialization order matters, but it
+        // shouldn't block a pass.
+        severity: alsoRequirementLevel ? 'error' : 'warning',
         code: 'TOUCHES_OVERLAP_CONFLICT',
-        message: `Changes "${pair.change_a}" and "${pair.change_b}" both touch Feature(s): ${pair.overlapping_features.join(', ')} -- conflict_candidate`,
+        message:
+          `Changes "${pair.change_a}" and "${pair.change_b}" both touch Feature(s): ${pair.overlapping_features.join(', ')}` +
+          (alsoRequirementLevel
+            ? ' — with overlapping requirement(s); apply order must be resolved.'
+            : ' — at Feature level only; apply in order and rebase base_fingerprint if needed.'),
         note_id: pair.change_a,
-        suggestion: 'User confirmation required. Auto-apply is blocked.',
+        suggestion: alsoRequirementLevel
+          ? 'Resolve the requirement collision manually; auto-apply is blocked.'
+          : 'Apply one change, then rebase the other\'s Delta Summary base_fingerprint against the new Feature content.',
       });
     } else if (pair.severity === 'needs_review') {
       issues.push({
@@ -216,6 +247,58 @@ export function checkDecisionConsistency(
 }
 
 /**
+ * Check Feature ↔ Change bidirectional backlink consistency.
+ *
+ * When `propose` creates a Change targeting a Feature, it updates the
+ * Feature's `changes:` frontmatter field via `updateFeatureChangesField`.
+ * If that step fails (or if the user manually creates a Change), the
+ * backlink is missing. This check detects the mismatch so users can fix
+ * either side.
+ */
+export function checkFeatureChangeBacklinks(
+  allRecords: IndexRecord[],
+): VerifyIssue[] {
+  const issues: VerifyIssue[] = [];
+  const features = new Map<string, IndexRecord>();
+  const changes: IndexRecord[] = [];
+
+  for (const r of allRecords) {
+    if (r.type === 'feature') features.set(r.id, r);
+    if (r.type === 'change') changes.push(r);
+  }
+
+  for (const change of changes) {
+    const featureIds: string[] = [];
+    if (change.feature) featureIds.push(change.feature);
+    if (change.features) featureIds.push(...change.features);
+
+    for (const fId of featureIds) {
+      const feature = features.get(fId);
+      if (!feature) continue; // Caught by INVALID_FRONTMATTER_REF
+
+      // Feature.changes should contain a reference to this Change
+      const featureLinksBack = feature.changes?.includes(change.id) ?? false;
+      if (!featureLinksBack) {
+        issues.push({
+          dimension: 'coherence',
+          severity: 'warning',
+          code: 'MISSING_LINK',
+          message:
+            `Change "${change.id}" declares feature "${fId}" but the Feature's ` +
+            `\`changes\` frontmatter does not link back to this Change.`,
+          note_id: change.id,
+          note_path: change.path,
+          suggestion:
+            `Add "[[${change.title}]]" to the \`changes:\` list in Feature "${fId}" frontmatter.`,
+        });
+      }
+    }
+  }
+
+  return issues;
+}
+
+/**
  * Check that all depends_on targets actually exist in the index.
  */
 export function checkDependsOnConsistency(
@@ -226,7 +309,8 @@ export function checkDependsOnConsistency(
 
   for (const change of activeChanges) {
     for (const dep of change.depends_on) {
-      if (!index.records.has(dep)) {
+      const depRecord = index.records.get(dep);
+      if (!depRecord) {
         issues.push({
           dimension: 'coherence',
           severity: 'error',
@@ -235,6 +319,16 @@ export function checkDependsOnConsistency(
           note_id: change.id,
           note_path: change.path,
           suggestion: 'Fix the depends_on entry or create the missing Change note.',
+        });
+      } else if (depRecord.type !== 'change') {
+        issues.push({
+          dimension: 'coherence',
+          severity: 'warning',
+          code: 'INVALID_DEPENDS_ON_TYPE',
+          message: `Change "${change.id}" depends_on "${dep}" which is a ${depRecord.type}, not a change`,
+          note_id: change.id,
+          note_path: change.path,
+          suggestion: 'depends_on should reference Change notes only.',
         });
       }
     }

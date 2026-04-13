@@ -1,4 +1,13 @@
 import { stripWikilinkSyntax } from '../parser/wikilink-parser.js';
+import { normalizeString } from '../../utils/normalize.js';
+
+/**
+ * Normalize a path for use as a lookup key. Converts backslashes to forward
+ * slashes so Windows paths match POSIX paths that scan.ts writes into records.
+ */
+function normalizePathKey(p: string): string {
+  return p.replace(/\\/g, '/');
+}
 
 export interface LookupMaps {
   title_to_ids: Map<string, string[]>;
@@ -40,22 +49,27 @@ export function buildLookupMaps(rawRecords: RawRecord[]): LookupMaps {
     // Id set for direct id resolution
     id_set.add(record.id);
 
-    // Title map (lowercase for case-insensitive matching)
-    const titleKey = record.title.toLowerCase();
+    // Title map — normalizeString strips zero-width chars, NFC-normalizes,
+    // trims, collapses whitespace, and lowercases. This ensures lookup
+    // survives invisible character spoofing and NFD/NFC filesystem variants.
+    const titleKey = normalizeString(record.title);
     const titleEntries = title_to_ids.get(titleKey) ?? [];
     titleEntries.push(record.id);
     title_to_ids.set(titleKey, titleEntries);
 
-    // Alias map
+    // Alias map (same normalization)
     for (const alias of record.aliases) {
-      const aliasKey = alias.toLowerCase();
+      const aliasKey = normalizeString(alias);
       const aliasEntries = alias_to_ids.get(aliasKey) ?? [];
       aliasEntries.push(record.id);
       alias_to_ids.set(aliasKey, aliasEntries);
     }
 
-    // Path map
-    path_to_id.set(record.path, record.id);
+    // Path map — normalize to forward-slash form so Windows backslash paths
+    // compare equal to POSIX paths. scan.ts already emits POSIX paths, but
+    // any caller that stored a raw record.path elsewhere would have platform
+    // separators. Normalize here defensively.
+    path_to_id.set(normalizePathKey(record.path), record.id);
   }
 
   return { title_to_ids, id_set, alias_to_ids, path_to_id };
@@ -76,9 +90,16 @@ export function resolveWikilink(
   if (target.length === 0) {
     return { error: 'no_match', raw_link: raw };
   }
-  const normalized = target.toLowerCase();
+  // Apply the same normalization used when building lookup keys so lookups
+  // survive zero-width chars, NFC/NFD differences, and whitespace variants.
+  const normalized = normalizeString(target);
 
-  // Step 1: exact match against title
+  // Step 1: exact match against note id (highest priority — deterministic, immutable)
+  if (lookups.id_set.has(target)) {
+    return { target_id: target, resolved_via: 'id' };
+  }
+
+  // Step 2: exact match against title
   const titleMatches = lookups.title_to_ids.get(normalized) ?? [];
   if (titleMatches.length === 1) {
     return { target_id: titleMatches[0], resolved_via: 'title' };
@@ -89,11 +110,6 @@ export function resolveWikilink(
       return { target_id: titleMatches[0], resolved_via: 'title' };
     }
     return { error: 'ambiguous_alias', raw_link: raw, candidates: titleMatches };
-  }
-
-  // Step 2: exact match against note id
-  if (lookups.id_set.has(target)) {
-    return { target_id: target, resolved_via: 'id' };
   }
 
   // Step 3: exact match against alias

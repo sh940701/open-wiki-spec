@@ -86,7 +86,15 @@ export interface GatheredContext {
   decisions: LinkedNoteContext[];
   systems: LinkedNoteContext[];
   sources: LinkedNoteContext[];
+  /**
+   * Query notes that are relevant to this change's target feature(s).
+   * Populated via the Feature's graph neighborhood (backlinks from queries that
+   * reference the feature). Lets agents see prior investigations during continue.
+   */
+  queries: LinkedNoteContext[];
   softWarnings: string[];
+  /** Project conventions from wiki/00-meta/conventions.md (if present). */
+  conventions?: string;
 }
 
 // ── Continue result ──
@@ -118,4 +126,8 @@ export interface ContinueDeps {
   parseNote: (filePath: string) => ParseResult;
   writeFile: (filePath: string, content: string) => void;
   readFile: (filePath: string) => string;
+  /** Atomic rename (used by status transition for crash safety). Optional for test mocks. */
+  renameFile?: (from: string, to: string) => void;
+  /** Best-effort file delete (used to clean temp files on rollback). Optional for test mocks. */
+  deleteFile?: (filePath: string) => void;
 }

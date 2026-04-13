@@ -25,5 +25,6 @@ export const FEATURE_REQUIRED_SECTIONS = [
 ] as const;
 
 export const FEATURE_OPTIONAL_SECTIONS = [
+  'Change Log',
   'Related Notes',
 ] as const;

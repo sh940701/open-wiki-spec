@@ -10,7 +10,7 @@ describe('completeness', () => {
   describe('checkFeatureCompleteness', () => {
     it('should return no issues for feature with all required sections and requirements', () => {
       const feat = createFeature('feat-1', {
-        headings: ['Purpose', 'Current Behavior', 'Requirements'],
+        headings: ['Purpose', 'Current Behavior', 'Constraints', 'Known Gaps', 'Requirements', 'Change Log'],
         requirements: [
           {
             name: 'Auth Login',
@@ -56,7 +56,7 @@ describe('completeness', () => {
 
     it('should report feature with no requirements', () => {
       const feat = createFeature('feat-1', {
-        headings: ['Purpose', 'Current Behavior', 'Requirements'],
+        headings: ['Purpose', 'Current Behavior', 'Constraints', 'Known Gaps', 'Requirements', 'Change Log'],
         requirements: [],
       });
       const index = createIndex([feat]);
@@ -66,7 +66,7 @@ describe('completeness', () => {
 
     it('should report requirement without SHALL/MUST', () => {
       const feat = createFeature('feat-1', {
-        headings: ['Purpose', 'Current Behavior', 'Requirements'],
+        headings: ['Purpose', 'Current Behavior', 'Constraints', 'Known Gaps', 'Requirements', 'Change Log'],
         requirements: [
           {
             name: 'R1',
@@ -84,7 +84,7 @@ describe('completeness', () => {
 
     it('should report requirement with no scenarios', () => {
       const feat = createFeature('feat-1', {
-        headings: ['Purpose', 'Current Behavior', 'Requirements'],
+        headings: ['Purpose', 'Current Behavior', 'Constraints', 'Known Gaps', 'Requirements', 'Change Log'],
         requirements: [
           {
             name: 'R1',

@@ -84,15 +84,28 @@ export function nextAction(
 export function toPublicNextAction(internal: InternalNextAction): PublicNextAction {
   switch (internal.action) {
     case 'fill_section':
-      return { action: 'fill_section', target: internal.target.sectionName };
+      return {
+        action: 'fill_section',
+        target: internal.target.sectionName,
+        guidance: internal.target.guidance,
+        templateHint: internal.target.templateHint,
+      };
     case 'transition':
       return { action: 'transition', to: internal.to };
     case 'blocked':
       return { action: 'blocked', reason: internal.reason, blockers: internal.unresolvedTargets };
     case 'start_implementation':
-      return { action: 'start_implementation', target: internal.target.description };
+      return {
+        action: 'start_implementation',
+        target: internal.target.description,
+        taskIndex: internal.target.index,
+      };
     case 'continue_task':
-      return { action: 'continue_task', target: internal.target.description };
+      return {
+        action: 'continue_task',
+        target: internal.target.description,
+        taskIndex: internal.target.index,
+      };
     case 'ready_to_apply':
       return { action: 'ready_to_apply' };
     case 'verify_then_archive':

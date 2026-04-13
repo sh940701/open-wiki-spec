@@ -63,10 +63,12 @@ export function analyzeSequencing(
 
   // 6. Compute overall status (worst severity)
   // Precedence: conflict_critical > blocked > conflict_candidate > needs_review > parallel_safe
+  // Dependency cycles escalate to `blocked` (highest severity below
+  // requirement_conflicts) because a cycle makes any progression impossible.
   let overallStatus: TouchesSeverity | RequirementConflictSeverity = 'parallel_safe';
   if (requirement_conflicts.length > 0) {
     overallStatus = 'conflict_critical';
-  } else if (pairwise_severities.some((s) => s.severity === 'blocked')) {
+  } else if (cycles.length > 0 || pairwise_severities.some((s) => s.severity === 'blocked')) {
     overallStatus = 'blocked';
   } else if (pairwise_severities.some((s) => s.severity === 'conflict_candidate')) {
     overallStatus = 'conflict_candidate';

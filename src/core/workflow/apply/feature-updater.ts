@@ -103,7 +103,11 @@ export function applyDeltaToFeature(
     .filter((e) => e.targetType === 'requirement')
     .sort((a, b) => getAtomicPriority(a.op) - getAtomicPriority(b.op));
 
-  // Track in-memory map changes for validation
+  // Track in-memory map changes for validation. We snapshot the set of
+  // pre-existing requirement names so the ADDED write phase can skip the
+  // skeleton insertion when a requirement already exists (no-op retry
+  // semantics — see preValidateEntry in apply.ts).
+  const preExistingReqNames = new Set(requirementsMap.keys());
   for (const entry of sorted) {
     const result = validateOperation(requirementsMap, entry);
     operations.push(result);
@@ -129,7 +133,13 @@ export function applyDeltaToFeature(
 
     const entry = opResult.entry;
     const section = findRequirementsSection(content);
-    if (!section) continue;
+    if (!section) {
+      // Missing Requirements section: record clear failure instead of silently skipping.
+      // This prevents ADDED operations from appearing successful while doing nothing.
+      opResult.success = false;
+      opResult.error = `Feature "${featureId}" has no "## Requirements" section. Cannot apply ${entry.op} on "${entry.targetName}". Add the section to the Feature note first.`;
+      continue;
+    }
 
     switch (entry.op) {
       case 'RENAMED': {
@@ -165,15 +175,19 @@ export function applyDeltaToFeature(
       }
 
       case 'ADDED': {
+        // Skip skeleton insertion when the requirement already exists in
+        // the parsed Feature — this happens on --no-auto-transition retry
+        // or crash recovery. validateOperation already promoted this to a
+        // success, and re-inserting would duplicate the skeleton.
+        if (preExistingReqNames.has(entry.targetName)) {
+          break;
+        }
         const markerChangeId = changeId || '';
         const skeleton = `\n### Requirement: ${entry.targetName}\n\n<!-- ADDED by change: ${markerChangeId}. Fill in normative statement (SHALL/MUST) and scenarios (WHEN/THEN). -->\n`;
         // Insert before the end of the Requirements section
-        const sectionNow = findRequirementsSection(content);
-        if (sectionNow) {
-          const before = content.slice(0, sectionNow.end);
-          const after = content.slice(sectionNow.end);
-          content = before + skeleton + after;
-        }
+        const before = content.slice(0, section.end);
+        const after = content.slice(section.end);
+        content = before + skeleton + after;
         break;
       }
     }
@@ -236,9 +250,12 @@ function validateOperation(
     }
 
     case 'ADDED': {
-      if (requirements.has(entry.targetName)) {
-        return { entry, success: false, error: `Requirement "${entry.targetName}" already exists for ADD` };
-      }
+      // No-op on retry: if the requirement already exists (e.g., a prior
+      // --no-auto-transition run inserted the skeleton, or apply was retried
+      // after a crash), treat as success so the status transition can
+      // proceed. The write phase uses the pre-existing name set to skip
+      // re-inserting the skeleton — see applyDeltaToFeature below. This
+      // matches the preValidateEntry contract in apply.ts.
       return { entry, success: true };
     }
   }

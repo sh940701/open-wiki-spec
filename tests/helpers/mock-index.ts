@@ -61,7 +61,7 @@ export function createFeature(id: string, overrides?: Partial<IndexRecord>): Ind
     id,
     type: 'feature',
     status: 'active',
-    headings: ['Purpose', 'Current Behavior', 'Requirements'],
+    headings: ['Purpose', 'Current Behavior', 'Constraints', 'Known Gaps', 'Requirements', 'Change Log'],
     ...overrides,
   });
 }
@@ -143,7 +143,7 @@ function defaultStatusForType(type: NoteType): string {
 function defaultHeadingsForType(type: NoteType): string[] {
   switch (type) {
     case 'feature':
-      return ['Purpose', 'Current Behavior', 'Requirements'];
+      return ['Purpose', 'Current Behavior', 'Constraints', 'Known Gaps', 'Requirements', 'Change Log'];
     case 'change':
       return ['Why', 'Delta Summary', 'Tasks', 'Validation'];
     default:

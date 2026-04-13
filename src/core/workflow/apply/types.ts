@@ -153,4 +153,13 @@ export interface ApplyDeps {
    * Used for lock acquisition. Defaults to fs.openSync(path, 'wx') when not provided.
    */
   exclusiveCreateFile?: (filePath: string, content: string) => void;
+  /**
+   * Copy the POSIX mode bits from `source` to `target`. Used after the
+   * temp-file write so the final Feature file inherits the original's
+   * permissions (e.g., a read-only vault under 0444 stays 0444 after
+   * apply). Optional because tests inject mock deps that don't need
+   * filesystem semantics; when omitted, apply skips the preservation
+   * step and relies on the default umask.
+   */
+  copyFileMode?: (source: string, target: string) => void;
 }

@@ -128,6 +128,10 @@ function extractNormativeStatement(section: Section): string | null {
     if (line.match(/^#{1,6}\s+/)) {
       break;
     }
+    // Strip apply workflow marker comments (MODIFIED/ADDED markers)
+    if (line.match(/^<!--\s*(MODIFIED|ADDED)\s+by\s+change:/)) {
+      continue;
+    }
     normativeLines.push(line);
   }
 

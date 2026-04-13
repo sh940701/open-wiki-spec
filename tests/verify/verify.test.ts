@@ -5,7 +5,7 @@ import { createIndex, createFeature, createChange, createSystem, createDecision 
 describe('verify orchestrator', () => {
   it('should return pass: true for a valid vault', () => {
     const feat = createFeature('feat-1', {
-      headings: ['Purpose', 'Current Behavior', 'Requirements'],
+      headings: ['Purpose', 'Current Behavior', 'Constraints', 'Known Gaps', 'Requirements', 'Change Log'],
       requirements: [
         { name: 'R1', key: 'feat-1::R1', normative: 'SHALL do X', scenarios: [{ name: 'S1', raw_text: 'WHEN X THEN Y' }], content_hash: 'abc' },
       ],
@@ -119,15 +119,25 @@ describe('verify orchestrator', () => {
   });
 
   it('should treat warnings as errors in strict mode', () => {
+    // Bootstrap exemption: orphan check skips single-note vaults, so we
+    // need ≥2 typed notes to trigger the orphan warning on feat-1.
     const feat = createFeature('feat-1', {
-      headings: ['Purpose', 'Current Behavior', 'Requirements'],
+      headings: ['Purpose', 'Current Behavior', 'Constraints', 'Known Gaps', 'Requirements', 'Change Log'],
       requirements: [
         { name: 'R1', key: 'feat-1::R1', normative: 'SHALL do X', scenarios: [{ name: 'S1', raw_text: 'WHEN X THEN Y' }], content_hash: 'abc' },
       ],
       links_out: [],
       links_in: [],
     });
-    const index = createIndex([feat]);
+    const companion = createFeature('feat-2', {
+      headings: ['Purpose', 'Current Behavior', 'Constraints', 'Known Gaps', 'Requirements', 'Change Log'],
+      requirements: [
+        { name: 'R1', key: 'feat-2::R1', normative: 'SHALL do Y', scenarios: [{ name: 'S1', raw_text: 'WHEN X THEN Y' }], content_hash: 'def' },
+      ],
+      links_out: ['feat-3'],
+      links_in: ['feat-3'],
+    });
+    const index = createIndex([feat, companion]);
     // Orphan note is a warning
     const report = verify(index, { strict: true });
     expect(report.pass).toBe(false);

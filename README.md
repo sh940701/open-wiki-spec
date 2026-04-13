@@ -200,12 +200,12 @@ ows status
 ows verify
 ```
 
-`ows init` creates the vault structure and generates 10 Claude Code skill files (`.claude/commands/ows-*.md`) so you can invoke workflows directly:
+`ows init` creates the vault structure and generates 12 Claude Code skill files (`.claude/commands/ows-*.md`) so you can invoke workflows directly:
 
 ```
 /ows-propose    /ows-continue    /ows-apply    /ows-verify
 /ows-query      /ows-status      /ows-retrieve /ows-archive
-/ows-init       /ows-migrate
+/ows-init       /ows-migrate     /ows-explore  /ows-onboard
 ```
 
 ### Vault structure
@@ -235,7 +235,54 @@ wiki/
 | `ows status` | Show change state and next action |
 | `ows list` | List active changes |
 | `ows archive` | Archive an applied change |
+| `ows retrieve` | Run standalone retrieval scan (read-only) |
+| `ows bulk-archive` | Archive all applied changes at once |
 | `ows migrate` | Migrate from OpenSpec format |
+
+### Versioning policy
+
+ows uses two independent version numbers:
+
+| Version | What it tracks | Bumped when |
+|---------|----------------|-------------|
+| `package.json` version (e.g., `0.2.4`) | npm release version | Any code change (follow semver) |
+| `CURRENT_SCHEMA_VERSION` in `src/core/index/schema-version.ts` | Vault frontmatter/section schema | Breaking change to required sections, frontmatter fields, or file layout |
+
+When a release bumps the schema version, existing vaults must be migrated. Run `ows --version` to see both numbers. `ows verify` emits `UNSUPPORTED_SCHEMA_VERSION` if a vault's schema version is not in `SUPPORTED_SCHEMA_VERSIONS`, and `BREAKING_CHANGE_WITHOUT_VERSION_BUMP` if the compile-time schema shape drifts from `BASELINE_SCHEMA_FINGERPRINT` without a version bump.
+
+### Global flags
+
+- `--verbose` — Enable verbose logging (sets `OWS_VERBOSE=1` for the child process)
+- `--debug` — Enable debug logging (sets `OWS_DEBUG=1`, implies `--verbose`)
+- `--json` — Output structured JSON (available on most commands)
+
+### CLI exit codes
+
+ows CLI commands use a consistent exit code policy:
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success (or `ows verify` reported no errors; warnings allowed unless `--strict`) |
+| `1` | Runtime error (validation failure, I/O error, domain error) |
+| `2` | Usage error (missing argument, unknown option, invalid flag value — Commander parse error) |
+
+`ows verify` specifics:
+- **Without `--strict`**: exit `0` if `error` count is `0`, regardless of warnings.
+- **With `--strict`**: exit `0` only if `error` count AND `warning` count are both `0`.
+- Any runtime error during verification → exit `1`.
+
+CI integration: use plain `ows verify` to gate merges on errors only; use `ows verify --strict` to also block on warnings like `POTENTIAL_SECRET_LEAK` or `BREAKING_CHANGE_WITHOUT_VERSION_BUMP`.
+
+### Environment variables
+
+| Variable | Effect |
+|----------|--------|
+| `OWS_NO_LOG=1` | Skip appending to `wiki/00-meta/log.md` (equivalent to `--no-log` on propose/apply/archive) |
+| `OWS_VERBOSE=1` | Enable verbose logging (same as `--verbose` flag) |
+| `OWS_DEBUG=1` | Enable debug logging (same as `--debug` flag) |
+| `OWS_TEST_OPENSPEC_DIR` | Override OpenSpec source directory in E2E tests |
+
+**Precedence**: CLI flags and environment variables are OR'd — either one enables the behavior. Use the CLI flag for per-invocation control and the env var for session-wide defaults.
 
 ## Migrating from OpenSpec
 
@@ -282,7 +329,7 @@ See the full migration guide (available in `docs/migration.md` when building fro
 - Installation -- prerequisites, install methods, build from source
 - Getting Started -- step-by-step tutorial
 - Core Concepts -- note types, requirements, delta summary, lifecycle
-- CLI Commands -- all 10 commands + 10 skill files
+- CLI Commands -- all 12 commands + 12 skill files
 - Migration Guide -- OpenSpec to ows conversion
 - Subagent Architecture -- how retrieval works
 - Module Reference:

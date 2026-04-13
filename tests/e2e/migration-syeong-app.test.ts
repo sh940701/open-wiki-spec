@@ -579,8 +579,11 @@ describeIfEnv('E2E: Migration from real Syeong_app', () => {
       expect(watchFeature!.requirements.length).toBe(3);
     });
 
-    it('verify report passes cleanly with no migration-caused errors', () => {
-      const report = verify(index, { skipCoherence: true });
+    it('verify report passes cleanly with no migration-caused errors (full coherence)', () => {
+      // End-to-end coherence check: with Feature ↔ Change backlinks
+      // auto-populated by applyFeatureChangeBacklinks, the default verify
+      // (skipCoherence: false) should also produce no errors.
+      const report = verify(index);
       const errors = report.issues.filter(i => i.severity === 'error');
 
       // INVALID_FRONTMATTER_TYPE can occur from meta files that use non-standard

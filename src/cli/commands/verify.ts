@@ -5,6 +5,7 @@ import { handleCliError } from "./error-handler.js";
 import type { Command } from 'commander';
 import { discoverVaultPath } from '../vault-discovery.js';
 import { verify } from '../../core/workflow/verify/verify.js';
+import { jsonEnvelope } from '../json-envelope.js';
 import { formatVerifyReport } from './formatters.js';
 
 export function registerVerifyCommand(program: Command): void {
@@ -26,10 +27,22 @@ export function registerVerifyCommand(program: Command): void {
 
         const report = verify(index, { changeId, strict: opts.strict });
 
+        // Empty-vault notice: generic PASS on an empty vault hides the
+        // fact that the user hasn't written anything yet. Surface a
+        // one-line hint in human output so fresh `ows init` vaults get
+        // a "nothing to verify — start with ows propose" nudge instead
+        // of a silently-green report. JSON output is untouched so
+        // automation still sees a valid report envelope.
+        const isEmptyVault = index.records.size === 0;
         if (opts.json) {
-          console.log(JSON.stringify(report, null, 2));
+          console.log(jsonEnvelope('verify', report));
         } else {
           console.log(formatVerifyReport(report));
+          if (isEmptyVault) {
+            console.log(
+              '\nNote: vault has no typed notes yet. Run `ows propose "<first change>"` to create one.',
+            );
+          }
         }
 
         if (!report.pass) {

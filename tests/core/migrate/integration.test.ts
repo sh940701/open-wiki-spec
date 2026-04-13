@@ -541,7 +541,10 @@ describe('Integration: Real-world OpenSpec migration', () => {
     expect(result1.filesWritten.length).toBeGreaterThan(0);
     const writtenCount = result1.filesWritten.length;
 
-    const result2 = await migrate({ projectPath: tmpDir });
+    // Second run needs allowExistingVault because by now the vault is
+    // populated. This is the explicit opt-in for re-runs — without it,
+    // migrate refuses to silently interleave into an existing vault.
+    const result2 = await migrate({ projectPath: tmpDir, allowExistingVault: true });
     expect(result2.filesSkipped.length).toBe(writtenCount);
     expect(result2.filesWritten).toHaveLength(0);
   });

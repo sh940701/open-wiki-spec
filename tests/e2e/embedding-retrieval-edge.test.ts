@@ -942,7 +942,11 @@ tags:
       expect(noteB!).toBeLessThan(1.0);
     });
 
-    it('retrieve with empty query terms returns no candidates', () => {
+    it('retrieve with empty query terms short-circuits to needs_confirmation', () => {
+      // Under-specified queries (zero terms, zero candidates) must NOT be
+      // silently classified as new_feature — that would cause `ows propose`
+      // to create a brand-new Feature/Change from essentially no signal.
+      // retrieve() short-circuits to needs_confirmation with a warning.
       const index = buildIndex(tempDir);
       const query: RetrievalQuery = {
         intent: 'add',
@@ -954,7 +958,9 @@ tags:
       };
       const result = retrieve(index, query);
       expect(result.candidates).toHaveLength(0);
-      expect(result.classification).toBe('new_feature');
+      expect(result.classification).toBe('needs_confirmation');
+      expect(result.confidence).toBe('low');
+      expect(result.warnings.some((w) => w.includes('under-specified'))).toBe(true);
     });
   });
 });

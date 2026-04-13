@@ -41,7 +41,7 @@ describe('discoverVaultPath', () => {
   });
 
   it('should throw when no wiki/ exists in any ancestor', () => {
-    expect(() => discoverVaultPath(tempDir)).toThrow('No wiki/ vault found');
+    expect(() => discoverVaultPath(tempDir)).toThrow('No open-wiki-spec vault found');
   });
 
   it('should not recognize wiki/ without 00-meta/schema.md', () => {
@@ -49,6 +49,6 @@ describe('discoverVaultPath', () => {
     fs.mkdirSync(wikiPath, { recursive: true });
     // No 00-meta/schema.md
 
-    expect(() => discoverVaultPath(tempDir)).toThrow('No wiki/ vault found');
+    expect(() => discoverVaultPath(tempDir)).toThrow('No open-wiki-spec vault found');
   });
 });

@@ -4,6 +4,12 @@
  */
 import type { VaultIndex, IndexRecord } from '../../../types/index.js';
 import type { VerifyIssue } from '../../../types/verify.js';
+import {
+  isSchemaVersionSupported,
+  SUPPORTED_SCHEMA_VERSIONS,
+  computeSchemaFingerprint,
+  BASELINE_SCHEMA_FINGERPRINT,
+} from '../../index/schema-version.js';
 
 /**
  * Run the operation validation matrix for a Change's Delta Summary.
@@ -213,10 +219,21 @@ export function checkStaleBase(change: IndexRecord, index: VaultIndex): VerifyIs
         dimension: 'correctness',
         severity: 'error',
         code: 'STALE_BASE',
-        message: `${entry.op} "${entry.target_name}": base_fingerprint mismatch. Expected ${entry.base_fingerprint}, current is ${currentReq.content_hash}. Another Change may have been applied since this Delta Summary was written.`,
+        // Surface both possible causes explicitly — we can't distinguish
+        // "legitimately stale because another Change applied first" from
+        // "the author copy-pasted or mistyped the hash and it was never a
+        // real prior value" without traversing git history. Giving users
+        // both diagnoses up front saves a confused debugging round-trip.
+        message:
+          `${entry.op} "${entry.target_name}": base_fingerprint mismatch. ` +
+          `Expected ${entry.base_fingerprint}, current is ${currentReq.content_hash}. ` +
+          `Either another Change was applied since this Delta Summary was written, ` +
+          `or the base_fingerprint was typed/copied incorrectly and never matched the Feature.`,
         note_id: change.id,
         note_path: change.path,
-        suggestion: 'Re-read the current Feature requirement and update the Delta Summary base_fingerprint.',
+        suggestion:
+          'Re-read the current Feature requirement and paste its actual content_hash into the Delta Summary base_fingerprint. ' +
+          'If you believe your hash is correct, check `git log -p` on the Feature file to see which Change last modified it.',
       });
     }
   }
@@ -247,6 +264,20 @@ export function checkStatusTransition(change: IndexRecord, index: VaultIndex): V
   }
 
   if (change.status === 'in_progress') {
+    // Must have all prerequisites met (planned-level checks)
+    const missing = checkPlannedPrerequisites(change);
+    if (missing.length > 0) {
+      issues.push({
+        dimension: 'correctness',
+        severity: 'error',
+        code: 'INVALID_STATUS_TRANSITION',
+        message: `Change "${change.id}" is "in_progress" but missing planned-level prerequisites: ${missing.join(', ')}`,
+        note_id: change.id,
+        note_path: change.path,
+        suggestion: 'Status cannot skip from proposed directly to in_progress. Fill sections first.',
+      });
+    }
+
     for (const dep of change.depends_on) {
       const depRecord = index.records.get(dep);
       if (depRecord && depRecord.status !== 'applied') {
@@ -263,6 +294,37 @@ export function checkStatusTransition(change: IndexRecord, index: VaultIndex): V
     }
   }
 
+  if (change.status === 'applied') {
+    // Applied changes must have all prerequisites met and all tasks done
+    const missing = checkPlannedPrerequisites(change);
+    if (missing.length > 0) {
+      issues.push({
+        dimension: 'correctness',
+        severity: 'error',
+        code: 'INVALID_STATUS_TRANSITION',
+        message: `Change "${change.id}" is "applied" but missing prerequisites: ${missing.join(', ')}. ` +
+          `Status may have been set manually (e.g., proposed → applied via file edit), bypassing the apply workflow.`,
+        note_id: change.id,
+        note_path: change.path,
+        suggestion: 'Run the apply workflow instead of editing the status field directly.',
+      });
+    }
+
+    const unfinishedTasks = change.tasks.filter((t) => !t.done);
+    if (unfinishedTasks.length > 0) {
+      issues.push({
+        dimension: 'correctness',
+        severity: 'error',
+        code: 'INVALID_STATUS_TRANSITION',
+        message: `Change "${change.id}" is "applied" but has ${unfinishedTasks.length} unchecked task(s). ` +
+          `The apply workflow requires all tasks to be checked before transitioning.`,
+        note_id: change.id,
+        note_path: change.path,
+        suggestion: 'Either complete the remaining tasks, or revert the status field to "in_progress".',
+      });
+    }
+  }
+
   return issues;
 }
 
@@ -275,18 +337,53 @@ export function checkStatusTransition(change: IndexRecord, index: VaultIndex): V
  * so per-record comparison is always a no-op. Instead, we surface index-level
  * schema_mismatch warnings (e.g., missing schema.md).
  */
-export function checkSchemaVersionMatch(_note: IndexRecord, _declaredVersion: string, index?: VaultIndex): VerifyIssue[] {
-  if (!index) return [];
-  return index.warnings
-    .filter((w) => w.type === 'schema_mismatch')
-    .map((w) => ({
+export function checkSchemaVersionMatch(_note: IndexRecord, declaredVersion: string, index?: VaultIndex): VerifyIssue[] {
+  const issues: VerifyIssue[] = [];
+  if (!index) return issues;
+
+  // Add index-level schema_mismatch warnings
+  for (const w of index.warnings) {
+    if (w.type === 'schema_mismatch') {
+      issues.push({
+        dimension: 'correctness' as const,
+        severity: 'error' as const,
+        code: 'SCHEMA_MISMATCH',
+        message: w.message,
+        note_path: w.note_path,
+        suggestion: 'Create or fix wiki/00-meta/schema.md with a valid schema_version field.',
+      });
+    }
+  }
+
+  // Gate: unsupported schema version
+  if (declaredVersion && declaredVersion !== 'unknown' && !isSchemaVersionSupported(declaredVersion)) {
+    issues.push({
       dimension: 'correctness' as const,
       severity: 'error' as const,
-      code: 'SCHEMA_MISMATCH',
-      message: w.message,
-      note_path: w.note_path,
-      suggestion: 'Create or fix wiki/00-meta/schema.md with a valid schema_version field.',
-    }));
+      code: 'UNSUPPORTED_SCHEMA_VERSION',
+      message: `Vault schema version "${declaredVersion}" is not supported by this ows version. Supported: ${SUPPORTED_SCHEMA_VERSIONS.join(', ')}`,
+      suggestion: 'Upgrade the vault schema or use a matching ows version.',
+    });
+  }
+
+  // Tripwire: schema shape changed without bumping CURRENT_SCHEMA_VERSION.
+  // Warns developers (not end users) that required/optional sections diverged
+  // from the baseline — a silent breaking change.
+  const runtimeFingerprint = computeSchemaFingerprint();
+  if (runtimeFingerprint !== BASELINE_SCHEMA_FINGERPRINT) {
+    issues.push({
+      dimension: 'correctness' as const,
+      severity: 'warning' as const,
+      code: 'BREAKING_CHANGE_WITHOUT_VERSION_BUMP',
+      message:
+        `ows schema shape changed (fingerprint ${runtimeFingerprint}) but CURRENT_SCHEMA_VERSION was not bumped. ` +
+        `Baseline: ${BASELINE_SCHEMA_FINGERPRINT}. Vaults built with the old shape may break silently.`,
+      suggestion:
+        'Bump CURRENT_SCHEMA_VERSION in src/core/index/schema-version.ts and update BASELINE_SCHEMA_FINGERPRINT to match.',
+    });
+  }
+
+  return issues;
 }
 
 /**

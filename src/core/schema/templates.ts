@@ -5,13 +5,23 @@ import type { NoteType } from './base.schema.js';
  * Used by init and workflow commands.
  */
 
+/**
+ * Escape a value for inclusion in a YAML double-quoted string.
+ * Handles backslashes and embedded double quotes to prevent injection.
+ */
+function escapeYamlString(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
 export function scaffoldFeature(id: string, title: string, systemRef: string): string {
+  const safeId = escapeYamlString(id);
+  const safeSystemRef = escapeYamlString(systemRef);
   return `---
 type: feature
-id: ${id}
+id: ${safeId}
 status: active
 systems:
-  - "[[${systemRef}]]"
+  - "[[${safeSystemRef}]]"
 sources: []
 decisions: []
 changes: []
@@ -46,6 +56,11 @@ The system SHALL <normative statement>.
 - WHEN <condition>
 - THEN <expected outcome>
 
+## Change Log
+
+| Date | Change | Summary |
+|------|--------|---------|
+
 ## Related Notes
 `;
 }
@@ -57,17 +72,21 @@ export function scaffoldChange(
   systemRef: string,
   createdAt: string,
 ): string {
+  const safeFeatureRef = escapeYamlString(featureRef);
+  const safeSystemRef = escapeYamlString(systemRef);
+  const safeCreatedAt = escapeYamlString(createdAt);
+  const safeId = escapeYamlString(id);
   return `---
 type: change
-id: ${id}
+id: ${safeId}
 status: proposed
-created_at: "${createdAt}"
-feature: "[[${featureRef}]]"
+created_at: "${safeCreatedAt}"
+feature: "[[${safeFeatureRef}]]"
 depends_on: []
 touches:
-  - "[[${featureRef}]]"
+  - "[[${safeFeatureRef}]]"
 systems:
-  - "[[${systemRef}]]"
+  - "[[${safeSystemRef}]]"
 sources: []
 decisions: []
 tags:

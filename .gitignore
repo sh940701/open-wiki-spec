@@ -9,3 +9,5 @@ openspec/
 docs/
 .ows-cache/
 *.tgz
+# Local dogfood vault (not part of library source)
+wiki/

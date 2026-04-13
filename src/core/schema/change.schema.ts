@@ -14,6 +14,7 @@ export const ChangeFrontmatterSchema = BaseFrontmatterSchema.extend({
   type: z.literal('change'),
   status: ChangeStatusEnum,
   created_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'created_at must be ISO date YYYY-MM-DD'),
+  // Reject explicit null (YAML `feature: null`) — it must either be a valid wikilink or omitted.
   feature: WikilinkRefSchema.optional(),
   features: z.array(WikilinkRefSchema).min(2).optional(),
   depends_on: z.array(WikilinkRefSchema).default([]),
@@ -23,11 +24,15 @@ export const ChangeFrontmatterSchema = BaseFrontmatterSchema.extend({
   decisions: z.array(WikilinkRefSchema).default([]),
 }).refine(
   (data) => {
+    // Reject explicit null — it must be omitted entirely or be a valid wikilink
+    if (data.feature === null || (data as unknown as { feature?: unknown }).feature === null) {
+      return false;
+    }
     const hasFeature = data.feature !== undefined;
     const hasFeatures = data.features !== undefined && data.features.length > 0;
     return hasFeature !== hasFeatures;
   },
-  'Must have exactly one of feature (scalar) or features (array), not both and not neither',
+  'Must have exactly one of feature (scalar) or features (array), not both and not neither. "feature: null" is not allowed.',
 );
 
 export type ChangeFrontmatter = z.infer<typeof ChangeFrontmatterSchema>;

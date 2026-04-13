@@ -17,16 +17,32 @@ const STOP_WORDS = new Set([
 ]);
 
 const INTENT_KEYWORDS: Array<{ pattern: RegExp; intent: LocalIntent }> = [
+  // English
   { pattern: /\b(fix|bug|broken|error|crash)\b/i, intent: 'fix' },
   { pattern: /\b(change|update|modify|refactor|improve)\b/i, intent: 'modify' },
   { pattern: /\b(remove|delete|deprecate|drop)\b/i, intent: 'remove' },
   { pattern: /\b(investigate|research|explore|analyze|query)\b/i, intent: 'investigate' },
+  // Korean — `\b` doesn't work at CJK boundaries so we match the word
+  // directly. These cover the most common natural-language patterns that
+  // Korean developers use when describing proposed changes.
+  { pattern: /(수정|버그|오류|에러|고장|깨진|크래시)/, intent: 'fix' },
+  { pattern: /(변경|업데이트|개선|리팩토링|개편)/, intent: 'modify' },
+  { pattern: /(삭제|제거|폐기|드롭)/, intent: 'remove' },
+  { pattern: /(조사|연구|탐색|분석|질의)/, intent: 'investigate' },
 ];
 
 // Matches camelCase or snake_case tokens
 const ENTITY_PATTERN = /^(?:[a-z]+[A-Z][a-zA-Z]*|[a-z]+_[a-z_]+)$/;
 
 const MAX_SUMMARY_LENGTH = 500;
+
+/**
+ * Maximum number of unique feature_terms a query may produce. Pathological
+ * 10k-char user inputs would otherwise produce hundreds of search terms,
+ * each triggering an O(notes × raw_text.length) lexical scan. Cap keeps
+ * retrieval bounded at `MAX_QUERY_TERMS × index_size` work per query.
+ */
+const MAX_QUERY_TERMS = 64;
 
 /**
  * Normalize a natural language user request into a structured QueryObject.
@@ -68,31 +84,47 @@ export function normalizeQuery(userRequest: string, overrideKeywords?: string[])
     };
   }
 
-  const words = extractWords(trimmed);
+  // Cap term extraction to the trimmed summary. Users can paste entire
+  // design docs into `ows propose` and we don't want each word to become
+  // its own lexical search term (which would be O(n_terms × n_notes)).
+  // The summary cap is already MAX_SUMMARY_LENGTH chars, so term counts
+  // stay bounded; MAX_QUERY_TERMS is a second line of defense against
+  // dense token streams (e.g., no whitespace non-English text).
+  const words = extractWords(summary);
   const significantWords = words.filter(
     (w) => !STOP_WORDS.has(w.toLowerCase()) && w.length > 1,
   );
 
   const entity_terms: string[] = [];
   const feature_terms: string[] = [];
+  const seenFeature = new Set<string>();
+  const seenEntity = new Set<string>();
 
   for (const word of significantWords) {
     // Skip intent keywords from feature_terms
     if (isIntentKeyword(word)) continue;
 
     if (ENTITY_PATTERN.test(word)) {
-      entity_terms.push(word);
+      if (!seenEntity.has(word)) {
+        seenEntity.add(word);
+        entity_terms.push(word);
+      }
     } else {
-      feature_terms.push(word.toLowerCase());
+      const lowered = word.toLowerCase();
+      if (!seenFeature.has(lowered)) {
+        seenFeature.add(lowered);
+        feature_terms.push(lowered);
+      }
     }
+    if (feature_terms.length + entity_terms.length >= MAX_QUERY_TERMS) break;
   }
 
   return {
     intent,
     summary,
-    feature_terms: [...new Set(feature_terms)],
+    feature_terms,
     system_terms: [],
-    entity_terms: [...new Set(entity_terms)],
+    entity_terms,
     status_bias: ['active', 'proposed', 'planned', 'in_progress'],
   };
 }

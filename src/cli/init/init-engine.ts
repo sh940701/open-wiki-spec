@@ -65,7 +65,7 @@ export async function initVault(options: InitOptions): Promise<InitResult> {
   const isExtend = fs.existsSync(wikiPath);
 
   if (isExtend && !options.force) {
-    return extendVault(wikiPath, projectPath);
+    return extendVault(wikiPath, projectPath, options.skipSeed);
   }
 
   // Fresh init or force re-init
@@ -78,17 +78,29 @@ export async function initVault(options: InitOptions): Promise<InitResult> {
     }
   }
 
-  // Create meta files
+  // Create meta files.
+  //
+  // conventions.md is user-authored content — rules the team wrote about
+  // how they use the vault. Even on a --force re-init we refuse to blow
+  // those rules away; the user almost never wants that. schema.md /
+  // index.md / log.md are regenerable scaffolding and are rewritten so
+  // schema_version stays in sync with the running CLI version.
+  const metaPath = path.join(wikiPath, '00-meta');
+  const conventionsPath = path.join(metaPath, 'conventions.md');
+  const conventionsExisted = fs.existsSync(conventionsPath);
+
   createSchemaFile(wikiPath);
   createIndexFile(wikiPath);
   createLogFile(wikiPath);
-  createConventionsFile(wikiPath);
+  if (!conventionsExisted) {
+    createConventionsFile(wikiPath);
+  }
 
   const metaFilesCreated = [
     'wiki/00-meta/schema.md',
     'wiki/00-meta/index.md',
     'wiki/00-meta/log.md',
-    'wiki/00-meta/conventions.md',
+    ...(conventionsExisted ? [] : ['wiki/00-meta/conventions.md']),
   ];
 
   // Create seed notes unless skipped
@@ -114,7 +126,7 @@ export async function initVault(options: InitOptions): Promise<InitResult> {
 /**
  * Extend an existing vault: add missing directories, regenerate skills.
  */
-function extendVault(wikiPath: string, projectPath: string): InitResult {
+function extendVault(wikiPath: string, projectPath: string, skipSeed?: boolean): InitResult {
   const directoriesCreated: string[] = [];
   const warnings: string[] = [];
 
@@ -154,7 +166,9 @@ function extendVault(wikiPath: string, projectPath: string): InitResult {
 
   // Create seed notes only if they don't already exist (never overwrite in extend mode)
   const seedFilesCreated: string[] = [];
-  seedFilesCreated.push(...createSeedNotes(wikiPath, true));
+  if (!skipSeed) {
+    seedFilesCreated.push(...createSeedNotes(wikiPath, true));
+  }
 
   // Regenerate skill files (always, in case CLI version changed)
   const skillFilesGenerated = writeAllSkillFiles(projectPath);

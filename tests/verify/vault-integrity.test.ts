@@ -92,12 +92,22 @@ describe('vault-integrity', () => {
     });
 
     it('should report notes with no incoming or outgoing links', () => {
+      // Bootstrap exemption: need ≥2 typed notes for orphan check to run.
       const feat = createFeature('feat-1', { links_out: [], links_in: [] });
-      const index = createIndex([feat]);
+      const sys = createSystem('sys-1', { links_out: ['other-sys'], links_in: ['other-sys'] });
+      const index = createIndex([feat, sys]);
       const issues = orphanNoteCheck(index);
       expect(issues).toHaveLength(1);
       expect(issues[0].code).toBe('ORPHAN_NOTE');
       expect(issues[0].severity).toBe('warning');
+      expect(issues[0].note_id).toBe('feat-1');
+    });
+
+    it('should skip orphan check entirely for single-note (bootstrap) vaults', () => {
+      const feat = createFeature('feat-1', { links_out: [], links_in: [] });
+      const index = createIndex([feat]);
+      const issues = orphanNoteCheck(index);
+      expect(issues).toHaveLength(0);
     });
 
     it('should skip meta files', () => {
@@ -106,7 +116,8 @@ describe('vault-integrity', () => {
         links_out: [],
         links_in: [],
       });
-      const index = createIndex([meta]);
+      const other = createFeature('feat-1', { links_out: ['sys-1'], links_in: ['sys-1'] });
+      const index = createIndex([meta, other]);
       const issues = orphanNoteCheck(index);
       expect(issues).toHaveLength(0);
     });

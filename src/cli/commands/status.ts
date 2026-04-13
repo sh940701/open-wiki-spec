@@ -5,29 +5,13 @@ import { handleCliError } from "./error-handler.js";
  */
 import type { Command } from 'commander';
 import { discoverVaultPath } from '../vault-discovery.js';
+import { warnOnUnsupportedSchema } from '../schema-check.js';
+import { jsonEnvelope } from '../json-envelope.js';
 import type { VaultIndex, IndexRecord } from '../../types/index.js';
-import type { NextAction } from '../../types/next-action.js';
 import type { SectionAnalysis, SectionStatus } from '../../core/workflow/continue/types.js';
 import { nextAction as computeCanonicalNextAction, toPublicNextAction } from '../../core/workflow/continue/next-action.js';
-
-export interface StatusResult {
-  changeId: string;
-  status: string;
-  features: string[];
-  sectionCompleteness: {
-    why: boolean;
-    deltaSummary: boolean;
-    tasks: boolean;
-    validation: boolean;
-    designApproach?: boolean;
-  };
-  taskProgress: {
-    total: number;
-    completed: number;
-  };
-  nextAction: NextAction;
-  blockedBy: string[];
-}
+import type { StatusResult } from '../../types/cli-contracts.js';
+export type { StatusResult };
 
 export function registerStatusCommand(program: Command): void {
   program
@@ -40,6 +24,7 @@ export function registerStatusCommand(program: Command): void {
         const { buildIndex } = await import('../../core/index/index.js');
         const { analyzeSequencing } = await import('../../core/sequencing/index.js');
         const index = await buildIndex(vaultPath);
+        warnOnUnsupportedSchema(index);
 
         const resolvedChangeId = resolveChangeId(changeId, index);
         const result = getChangeStatus(resolvedChangeId, index, {
@@ -47,7 +32,7 @@ export function registerStatusCommand(program: Command): void {
         });
 
         if (opts.json) {
-          console.log(JSON.stringify(result, null, 2));
+          console.log(jsonEnvelope('status', result));
         } else {
           console.log(formatStatusHuman(result));
         }
@@ -150,11 +135,11 @@ export function getChangeStatus(changeId: string, index: VaultIndex, deps?: Stat
     completed: analysis.completedTasks,
   };
 
-  // Check blocked dependencies
+  // Check blocked dependencies (include missing/unresolved deps as blockers too)
   const blockedBy: string[] = [];
   for (const dep of change.depends_on) {
     const depRecord = index.records.get(dep);
-    if (depRecord && depRecord.status !== 'applied') {
+    if (!depRecord || depRecord.status !== 'applied') {
       blockedBy.push(dep);
     }
   }
@@ -174,6 +159,7 @@ export function getChangeStatus(changeId: string, index: VaultIndex, deps?: Stat
     decisions: [],
     systems: [],
     sources: [],
+    queries: [],
     softWarnings: [],
   };
 
@@ -253,8 +239,43 @@ function formatStatusHuman(result: StatusResult): string {
   if (result.nextAction.target) lines.push(`  Target: ${result.nextAction.target}`);
   if (result.nextAction.to) lines.push(`  Transition to: ${result.nextAction.to}`);
   if (result.nextAction.reason) lines.push(`  Reason: ${result.nextAction.reason}`);
+  // Surface guidance and template hint for fill_section actions so users
+  // know exactly what content to write without re-reading the docs.
+  if (result.nextAction.guidance) {
+    lines.push(`  Guidance: ${result.nextAction.guidance}`);
+  }
+  if (result.nextAction.templateHint) {
+    lines.push(`  Template:`);
+    for (const tl of result.nextAction.templateHint.split('\n')) {
+      lines.push(`    ${tl}`);
+    }
+  }
   if (result.blockedBy.length > 0) {
     lines.push(`  Blocked by: ${result.blockedBy.join(', ')}`);
   }
+  // Next command hint so users don't have to guess the lifecycle
+  lines.push('');
+  const hint = getNextCommandHint(result);
+  if (hint) lines.push(`Next command: ${hint}`);
   return lines.join('\n');
+}
+
+function getNextCommandHint(result: StatusResult): string | null {
+  switch (result.nextAction.action) {
+    case 'fill_section':
+      return `ows continue ${result.changeId}  # fill the "${result.nextAction.target}" section`;
+    case 'transition':
+      return `ows continue ${result.changeId}  # transition to ${result.nextAction.to}`;
+    case 'start_implementation':
+    case 'continue_task':
+      return `ows continue ${result.changeId}  # work on next task`;
+    case 'ready_to_apply':
+      return `ows apply ${result.changeId}`;
+    case 'verify_then_archive':
+      return `ows verify ${result.changeId} && ows archive ${result.changeId}`;
+    case 'blocked':
+      return `# resolve blockers first: ${result.blockedBy.join(', ')}`;
+    default:
+      return null;
+  }
 }

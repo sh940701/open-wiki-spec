@@ -19,6 +19,11 @@ export function checkBaseFingerprints(
     // Missing fingerprint: verify will report separately
     if (entry.base_fingerprint === null) continue;
 
+    // Special migration marker: "migrated" means the base fingerprint
+    // was not available at migration time. Skip stale detection so
+    // migrated vaults don't emit false positive warnings.
+    if (entry.base_fingerprint === 'migrated') continue;
+
     const featureRecord = index.get(entry.target_note_id);
     // Broken reference: reported by verify
     if (!featureRecord) continue;

@@ -59,7 +59,16 @@ export type ProposeAction =
   | 'created_feature_and_change'
   | 'asked_user';
 
+/**
+ * JSON schema version for ProposeResult shape.
+ * Bump this when breaking changes are made to the output format.
+ * Consumers (CLI clients, AI agents) should check this to adapt parsing.
+ */
+export const PROPOSE_RESULT_SCHEMA_VERSION = '1.0.0';
+
 export interface ProposeResult {
+  /** Schema version for the result JSON. See PROPOSE_RESULT_SCHEMA_VERSION. */
+  schema_version?: string;
   action: ProposeAction;
   retrieval: RetrievalResult;
   classification: ClassificationResult;
@@ -68,6 +77,8 @@ export interface ProposeResult {
   prerequisites: PlannedPrerequisites | null;
   transitioned_to_planned: boolean;
   sequencing_warnings: string[];
+  /** Project conventions from wiki/00-meta/conventions.md (if present). */
+  conventions?: string;
 }
 
 // ── Dependency injection ──
@@ -79,6 +90,11 @@ export interface ProposeDeps {
   parseNote: (filePath: string) => import('../../parser/types.js').ParseResult;
   writeFile: (filePath: string, content: string) => void;
   readFile: (filePath: string) => string;
+  /**
+   * Atomic exclusive file create (O_CREAT|O_EXCL). Defaults to writeFile if omitted.
+   * When provided, used for new Feature/Change notes to prevent concurrent propose races.
+   */
+  exclusiveCreateFile?: (filePath: string, content: string) => void;
 }
 
 export interface ProposeOptions {

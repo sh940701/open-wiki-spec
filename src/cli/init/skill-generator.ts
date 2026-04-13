@@ -209,6 +209,8 @@ Use this context to inform section writing (especially Why and Delta Summary).
 - \`--json\`: Output structured JSON result
 - \`--dry-run\`: Validate without writing any files (use this to preview)
 - \`--force-stale\`: Apply even when stale base fingerprints are detected
+- \`--no-auto-transition\`: Keep status as \`in_progress\` after writing (use when ADDED/MODIFIED markers need manual content before finalizing)
+- \`--no-log\`: Skip appending to \`wiki/00-meta/log.md\`
 
 **Steps**
 
@@ -240,6 +242,15 @@ Use this context to inform section writing (especially Why and Delta Summary).
    ---
 
 4. **Execute the apply (if confirmed)**
+
+   **CRITICAL: If the Change has ADDED or MODIFIED operations, use \`--no-auto-transition\` on the first apply** so the status stays in \`in_progress\` until you've filled in the marker contents. Example:
+   \`\`\`bash
+   # First apply: insert markers without transitioning to applied
+   ows apply <changeId> --no-auto-transition --json
+   \`\`\`
+   Without this flag, the change will transition to \`applied\` while the Feature note still contains unfilled \`<!-- ADDED ... -->\` marker comments, and \`ows verify\` will then report \`UNFILLED_APPLY_MARKER\` errors.
+
+   For changes with ONLY programmatic ops (RENAMED/REMOVED), a single plain apply is fine:
    \`\`\`bash
    ows apply <changeId> --json
    \`\`\`
@@ -254,7 +265,17 @@ Use this context to inform section writing (especially Why and Delta Summary).
    - **MODIFIED**: Inserts a \`<!-- MODIFIED by change: <changeId> -->\` marker after the requirement heading. The agent must then update the requirement text.
    - **ADDED**: Inserts a \`<!-- ADDED by change: <changeId>. Fill in normative statement (SHALL/MUST) and scenarios (WHEN/THEN). -->\` marker in the Requirements section. The agent must then write the new requirement content.
 
-5. **Show final state**
+5. **Fill marker contents (if using --no-auto-transition)**
+
+   Open each Feature note listed in \`result.modifiedFiles\`, find the \`<!-- ADDED ... -->\` and \`<!-- MODIFIED ... -->\` marker comments, and replace them with real requirement text (SHALL/MUST normative + WHEN/THEN scenarios). Then remove the marker comment itself.
+
+6. **Finalize apply**
+   \`\`\`bash
+   # Second apply: now that markers are filled, transition to applied
+   ows apply <changeId> --json
+   \`\`\`
+
+7. **Show final state**
    \`\`\`bash
    ows status <changeId>
    \`\`\`
@@ -706,6 +727,150 @@ In extend mode, existing seed notes are never overwritten. Use \`--skip-seed\` t
 - Encourage the user to edit seed-context.md after init — it improves retrieval quality
 - Show warnings if any files were skipped`,
   },
+  explore: {
+    name: 'ows-explore',
+    description: 'Enter exploration mode — investigate the codebase without implementing.',
+    instructions: `Enter thinking/exploration mode. Investigate the codebase, architecture, and existing behavior without making any code changes.
+
+**Input**: The argument after \`/ows-explore\` is a topic, question, or area to investigate (e.g., \`/ows-explore "how does the auth flow work?"\`).
+
+**Purpose**: This is a safe space to investigate before committing to any plan. Unlike \`/ows-propose\`, this does NOT create any vault notes or changes. Use this to build understanding before proposing work.
+
+**Steps**
+
+1. **Understand the investigation scope**
+
+   Parse the user's question and identify:
+   - What system/feature area is involved
+   - What kind of answer is needed (architecture overview, data flow, bug root cause, etc.)
+   - What files/modules are likely relevant
+
+2. **Search the vault for existing knowledge**
+   \`\`\`bash
+   ows query "<topic>" --json
+   \`\`\`
+   Check if the vault already has relevant Feature, System, Decision, or Query notes.
+
+3. **Explore the codebase**
+
+   Read code, trace call paths, examine data flows. Use whatever tools are available:
+   - File reading and search
+   - Symbol navigation
+   - Dependency tracing
+   - Architecture visualization (ASCII diagrams)
+
+4. **Document findings**
+
+   Present findings with:
+   - Architecture diagrams (ASCII) where helpful
+   - Key files and their roles
+   - Data flow descriptions
+   - Relevant existing vault notes
+   - Questions that remain unanswered
+
+5. **Suggest next steps**
+
+   Based on findings:
+   - "This is well-understood. No action needed."
+   - "Consider creating a Decision note to record this rationale."
+   - "This reveals work to do. Run \`/ows-propose\` to formalize it."
+   - "Save these findings as a Query note? Run \`ows query '<topic>' --save\`"
+
+**Rules**
+- **NO code changes** — this is read-only investigation
+- **NO vault modifications** — don't create notes (suggest it, but don't do it)
+- **Be thorough** — read actual code, don't guess from file names
+- **Visualize** — use ASCII diagrams for architecture, data flows, component relationships
+- **Connect to vault** — reference existing vault notes when relevant
+- **Capture for later** — if findings are substantial, suggest saving as a Query note`,
+  },
+  onboard: {
+    name: 'ows-onboard',
+    description: 'Guided tutorial for first-time open-wiki-spec users.',
+    instructions: `Guide a first-time user through a complete open-wiki-spec cycle using their actual codebase.
+
+**Purpose**: Help new users learn ows by doing — not by reading docs. Walk them through a real (small) cycle from propose to archive.
+
+**Steps**
+
+1. **Check vault state**
+   \`\`\`bash
+   ows list --json
+   ows verify --json
+   \`\`\`
+   Determine if the vault is freshly initialized or already has content.
+
+2. **Explain the vault structure**
+
+   Give a quick orientation:
+   \`\`\`
+   wiki/
+     00-meta/       — Vault metadata and conventions
+     01-sources/    — External references (PRDs, docs)
+     02-systems/    — System/component boundaries
+     03-features/   — Feature specifications (the "what is")
+     04-changes/    — Active work units (the "what's changing")
+     05-decisions/  — Design decisions and rationale
+     06-queries/    — Investigation notes
+     99-archive/    — Completed changes
+   \`\`\`
+
+3. **Pick a small real task**
+
+   Help the user identify a small, concrete task from their project:
+   - A simple feature addition
+   - A bug fix
+   - A small refactor
+
+   The task should be completable in ~15 minutes. Ask the user what they'd like to work on.
+
+4. **Walk through the full cycle**
+
+   Guide the user step by step (pausing for confirmation at each stage):
+
+   **a. Propose** (\`/ows-propose\`)
+   - Show how retrieval scans for existing work
+   - Explain the classification result
+   - Create the Feature + Change notes
+
+   **b. Fill sections** (\`/ows-continue\`)
+   - Help write the Why section
+   - Help write the Delta Summary
+   - Help write Tasks
+   - Help write Validation
+   - Show the proposed → planned transition
+
+   **c. Implement** (\`/ows-continue\`)
+   - Work through the tasks
+   - Show how tasks are tracked
+
+   **d. Apply** (\`/ows-apply\`)
+   - Show how the Feature note gets updated
+   - Explain the two-phase commit
+
+   **e. Verify** (\`/ows-verify\`)
+   - Run the 4-dimension check
+   - Explain what each dimension means
+
+   **f. Archive** (\`/ows-archive\`)
+   - Move the completed change
+   - Show the clean state
+
+5. **Wrap up**
+
+   Summarize what they learned:
+   - 6 note types and their purposes
+   - The lifecycle: propose → plan → implement → apply → verify → archive
+   - Key commands they'll use daily
+   - Where to find help (README, \`/ows-status\`, \`/ows-query\`)
+
+**Guardrails**
+- Pause after EACH major step for user confirmation
+- Keep explanations concise — show, don't lecture
+- Use the user's actual project, not hypothetical examples
+- If the user gets confused, simplify — don't add complexity
+- The goal is confidence, not completeness`,
+  },
   migrate: {
     name: 'ows-migrate',
     description: 'Migrate an existing OpenSpec project to open-wiki-spec format.',
@@ -800,6 +965,9 @@ ${skillDef.instructions}
 
 /**
  * Write all skill files to the Claude Code commands directory.
+ * If a user has customized an existing skill file (contents differ from the
+ * previously-generated version), back it up before overwriting so users
+ * never lose their customizations.
  */
 export function writeAllSkillFiles(projectPath: string): string[] {
   const claudeDir = path.join(projectPath, '.claude', 'commands');
@@ -808,8 +976,22 @@ export function writeAllSkillFiles(projectPath: string): string[] {
   const generated: string[] = [];
   for (const [workflowName, skillDef] of Object.entries(WORKFLOW_SKILLS)) {
     const skillPath = path.join(claudeDir, `ows-${workflowName}.md`);
-    const content = generateSkillFile(skillDef);
-    fs.writeFileSync(skillPath, content);
+    const newContent = generateSkillFile(skillDef);
+
+    // If file exists and differs from what we're about to write, back it up
+    if (fs.existsSync(skillPath)) {
+      try {
+        const existingContent = fs.readFileSync(skillPath, 'utf-8');
+        if (existingContent !== newContent) {
+          const backupPath = `${skillPath}.bak`;
+          fs.writeFileSync(backupPath, existingContent);
+        }
+      } catch {
+        // Best-effort backup — don't block init if read fails
+      }
+    }
+
+    fs.writeFileSync(skillPath, newContent);
     generated.push(skillPath);
   }
 

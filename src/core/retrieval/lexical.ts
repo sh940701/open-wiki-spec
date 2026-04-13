@@ -15,6 +15,29 @@ export function lexicalRetrieval(
 
   if (searchTerms.length === 0) return candidates;
 
+  // Precompute reverse indexes once: systemId → notes that list it, etc.
+  // Avoids O(n²) scanning during system/entity term matching.
+  const notesBySystem = new Map<string, string[]>();
+  const notesBySource = new Map<string, string[]>();
+  const notesByDecision = new Map<string, string[]>();
+  for (const record of index.records.values()) {
+    for (const sysId of record.systems) {
+      const arr = notesBySystem.get(sysId) ?? [];
+      arr.push(record.id);
+      notesBySystem.set(sysId, arr);
+    }
+    for (const srcId of record.sources) {
+      const arr = notesBySource.get(srcId) ?? [];
+      arr.push(record.id);
+      notesBySource.set(srcId, arr);
+    }
+    for (const decId of record.decisions) {
+      const arr = notesByDecision.get(decId) ?? [];
+      arr.push(record.id);
+      notesByDecision.set(decId, arr);
+    }
+  }
+
   // 1. Title match
   for (const record of index.records.values()) {
     const titleLower = record.title.toLowerCase();
@@ -43,7 +66,7 @@ export function lexicalRetrieval(
     }
   }
 
-  // 3. System match
+  // 3. System match (uses precomputed notesBySystem reverse index)
   for (const term of query.system_terms) {
     const termLower = term.toLowerCase();
     for (const record of index.records.values()) {
@@ -53,11 +76,9 @@ export function lexicalRetrieval(
           record.aliases.some((a) => a.toLowerCase().includes(termLower))
         ) {
           candidates.add(record.id);
-          // Add all notes that list this system in their systems field
-          for (const other of index.records.values()) {
-            if (other.systems.includes(record.id)) {
-              candidates.add(other.id);
-            }
+          const referencing = notesBySystem.get(record.id) ?? [];
+          for (const otherId of referencing) {
+            candidates.add(otherId);
           }
         }
       }
@@ -82,7 +103,7 @@ export function lexicalRetrieval(
     }
   }
 
-  // 5. Source / Decision match
+  // 5. Source / Decision match (uses precomputed notesBySource/notesByDecision reverse indexes)
   for (const term of query.entity_terms) {
     const termLower = term.toLowerCase();
     for (const record of index.records.values()) {
@@ -92,11 +113,10 @@ export function lexicalRetrieval(
           record.aliases.some((a) => a.toLowerCase().includes(termLower))
         ) {
           candidates.add(record.id);
-          // Include notes that reference this source/decision
-          for (const other of index.records.values()) {
-            if (other.sources.includes(record.id) || other.decisions.includes(record.id)) {
-              candidates.add(other.id);
-            }
+          const refByType = record.type === 'source' ? notesBySource : notesByDecision;
+          const referencing = refByType.get(record.id) ?? [];
+          for (const otherId of referencing) {
+            candidates.add(otherId);
           }
         }
       }

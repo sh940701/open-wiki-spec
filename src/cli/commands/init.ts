@@ -2,8 +2,10 @@ import { handleCliError } from "./error-handler.js";
 /**
  * CLI handler for `ows init`.
  */
+import * as path from 'node:path';
 import type { Command } from 'commander';
 import { initVault } from '../init/init-engine.js';
+import { jsonEnvelope } from '../json-envelope.js';
 
 export function registerInitCommand(program: Command): void {
   program
@@ -16,7 +18,7 @@ export function registerInitCommand(program: Command): void {
       try {
         const result = await initVault({ path: targetPath, force: opts.force, skipSeed: opts.skipSeed });
         if (opts.json) {
-          console.log(JSON.stringify(result, null, 2));
+          console.log(jsonEnvelope('init', result));
         } else {
           if (result.mode === 'fresh') {
             console.log(`Vault initialized at ${result.wikiPath}`);
@@ -33,9 +35,21 @@ export function registerInitCommand(program: Command): void {
           if (result.mode === 'fresh') {
             console.log('');
             console.log('Next steps:');
-            console.log('  1. Edit wiki/01-sources/seed-context.md with your project description');
-            console.log('  2. Edit wiki/02-systems/default-system.md with your system boundaries');
-            console.log('  3. Run `ows propose` to create your first feature note');
+            // If init was run with a path argument other than cwd, tell users
+            // to cd into the vault before running propose — propose uses
+            // the current working directory to discover the vault.
+            const initPath = path.resolve(targetPath ?? '.');
+            const cwd = path.resolve('.');
+            if (initPath !== cwd) {
+              console.log(`  1. cd ${path.relative(cwd, initPath) || initPath}`);
+              console.log('  2. Edit wiki/01-sources/seed-context.md with your project description');
+              console.log('  3. Edit wiki/02-systems/default-system.md with your system boundaries');
+              console.log('  4. Run `ows propose "<describe your first change>"` to create a Feature + Change');
+            } else {
+              console.log('  1. Edit wiki/01-sources/seed-context.md with your project description');
+              console.log('  2. Edit wiki/02-systems/default-system.md with your system boundaries');
+              console.log('  3. Run `ows propose "<describe your first change>"` to create a Feature + Change');
+            }
           }
         }
       } catch (err: unknown) {

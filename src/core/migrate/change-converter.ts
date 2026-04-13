@@ -39,8 +39,15 @@ export function convertChange(
   // Parse capabilities from proposal for feature linking
   const capabilities = parseCapabilities(change.proposal ?? '');
 
-  // Build feature reference
-  const featureRef = resolveFeatureRef(change, featureRefs, capabilities, warnings);
+  // Build feature reference. Multi-capability OpenSpec changes produce a
+  // `features: [...]` array in the migrated ows Change so all touched
+  // features are preserved (ows schema requires multi-feature to use
+  // `features` with min 2 entries).
+  const allFeatureRefs = resolveAllFeatureRefs(change, featureRefs, capabilities);
+  const featureRef = allFeatureRefs.length > 0
+    ? allFeatureRefs[0]
+    : resolveFeatureRef(change, featureRefs, capabilities, warnings);
+  const multiFeatureRefs = allFeatureRefs.length >= 2 ? allFeatureRefs : undefined;
 
   // Build delta summary from delta specs
   const deltaSummary = buildDeltaSummary(change, featureRefs);
@@ -68,6 +75,7 @@ export function convertChange(
     status,
     createdAt,
     featureRef,
+    featuresMulti: multiFeatureRefs,
     dependsOn,
     touchesRefs,
     systemRefs,
@@ -126,6 +134,9 @@ function buildChangeNote(opts: {
   status: string;
   createdAt: string;
   featureRef: string;
+  /** If present with length >= 2, the change has multiple features and
+   *  `features: [...]` is emitted instead of a single `feature:` scalar. */
+  featuresMulti?: string[];
   dependsOn: string[];
   touchesRefs: string[];
   systemRefs: string[];
@@ -146,12 +157,18 @@ function buildChangeNote(opts: {
     ? opts.systemRefs.map(s => `  - ${s}`).join('\n')
     : '';
 
+  // Emit either `feature:` (single) or `features: [...]` (multi), never both.
+  // The ows Change schema refines exactly one of them.
+  const featureField = opts.featuresMulti && opts.featuresMulti.length >= 2
+    ? `features:\n${opts.featuresMulti.map(f => `  - ${safeYamlQuoted(f)}`).join('\n')}`
+    : `feature: ${safeYamlQuoted(opts.featureRef)}`;
+
   return `---
 type: change
 id: ${safeYamlScalar(opts.id)}
 status: ${safeYamlScalar(opts.status)}
 created_at: ${safeYamlQuoted(opts.createdAt)}
-feature: ${safeYamlQuoted(opts.featureRef)}
+${featureField}
 depends_on:
 ${dependsOnYaml || '  []'}
 touches:
@@ -327,8 +344,48 @@ function resolveFeatureRef(
     }
   }
 
-  warnings.push(`Could not resolve feature reference for change ${change.name}, leaving empty`);
-  return '';
+  const placeholderRef = `[[Feature: ${formatChangeTitle(change.name)}]]`;
+  warnings.push(`Could not resolve feature reference for change ${change.name}, using placeholder: ${placeholderRef}`);
+  return placeholderRef;
+}
+
+/**
+ * Collect ALL feature refs from delta specs + capabilities + touches.
+ * Used to populate `features: [...]` for multi-feature ows Changes, so that
+ * OpenSpec changes touching 2+ capabilities don't silently lose the extras.
+ */
+function resolveAllFeatureRefs(
+  change: ScannedChange,
+  featureRefs: Map<string, string>,
+  capabilities: ParsedCapabilities,
+): string[] {
+  const collected: string[] = [];
+  const seen = new Set<string>();
+  const addIfNew = (ref: string | undefined) => {
+    if (ref && !seen.has(ref)) {
+      seen.add(ref);
+      collected.push(ref);
+    }
+  };
+
+  // Delta specs
+  for (const spec of change.deltaSpecs) {
+    addIfNew(featureRefs.get(spec.capability));
+  }
+  // Proposal capabilities (modified before new: convention — primary first)
+  for (const cap of capabilities.modifiedCapabilities) {
+    addIfNew(featureRefs.get(cap));
+  }
+  for (const cap of capabilities.newCapabilities) {
+    addIfNew(featureRefs.get(cap));
+  }
+  // Touches metadata
+  if (change.metadata?.touches) {
+    for (const touch of change.metadata.touches) {
+      addIfNew(featureRefs.get(touch));
+    }
+  }
+  return collected;
 }
 
 function buildDeltaSummary(

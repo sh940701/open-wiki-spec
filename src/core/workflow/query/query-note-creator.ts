@@ -72,6 +72,10 @@ function buildBody(input: QueryNoteInput): string {
 
   sections.push(`# Query: ${input.title}`);
   sections.push('');
+  sections.push('## Purpose');
+  sections.push('');
+  sections.push(`Investigation: ${input.question}`);
+  sections.push('');
   sections.push('## Question');
   sections.push('');
   sections.push(input.question);

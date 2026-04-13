@@ -223,15 +223,23 @@ describe('continueChange', () => {
     expect(result.nextAction.action).toBe('ready_to_apply');
   });
 
-  it('returns verify_then_archive for applied status', () => {
-    const change = makeRecord({ status: 'applied' });
+  it('returns verify_then_archive for applied status (explicit name)', () => {
+    const change = makeRecord({ id: 'change-applied', status: 'applied' });
     const index = makeIndex([change]);
     const deps = makeDeps({
       parseNote: vi.fn().mockReturnValue(makeParsed()),
     });
 
-    const result = continueChange(index, deps);
+    const result = continueChange(index, deps, { changeName: 'change-applied' });
     expect(result.nextAction.action).toBe('verify_then_archive');
+  });
+
+  it('throws error when no active changes and no explicit name', () => {
+    const change = makeRecord({ status: 'applied' });
+    const index = makeIndex([change]);
+    const deps = makeDeps();
+
+    expect(() => continueChange(index, deps)).toThrow('No active changes');
   });
 
   it('selects change by explicit name', () => {
@@ -257,7 +265,7 @@ describe('continueChange', () => {
       type: 'feature',
       title: 'Auth Login',
       status: 'active',
-      headings: ['Purpose', 'Current Behavior', 'Requirements'],
+      headings: ['Purpose', 'Current Behavior', 'Constraints', 'Known Gaps', 'Requirements', 'Change Log'],
       path: 'wiki/03-features/feature-auth.md',
     });
     const change = makeRecord({
@@ -272,7 +280,7 @@ describe('continueChange', () => {
         { level: 2, title: 'Current Behavior', content: 'Username/password login only.', line: 10, children: [] },
         { level: 2, title: 'Requirements', content: 'Must support MFA.', line: 20, children: [] },
       ],
-      headings: ['Purpose', 'Current Behavior', 'Requirements'],
+      headings: ['Purpose', 'Current Behavior', 'Constraints', 'Known Gaps', 'Requirements', 'Change Log'],
     });
 
     const deps = makeDeps({

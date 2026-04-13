@@ -16,7 +16,7 @@ export function extractWikilinks(
   const errors: ParseError[] = [];
   const lines = text.split('\n');
   let insideCodeFence = false;
-  let codeFenceMarker = '';
+  let codeFenceMarker = '';  // The opening fence string (e.g., "```" or "~~~~~")
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -25,10 +25,16 @@ export function extractWikilinks(
     if (fenceMatch) {
       if (!insideCodeFence) {
         insideCodeFence = true;
-        codeFenceMarker = fenceMatch[1][0];
-      } else if (line.trim().startsWith(codeFenceMarker.repeat(3))) {
-        insideCodeFence = false;
-        codeFenceMarker = '';
+        codeFenceMarker = fenceMatch[1]; // Store the full opening fence (e.g., "````")
+      } else {
+        // CommonMark: closing fence must have same marker char and length >= opening
+        const trimmed = line.trim();
+        const openChar = codeFenceMarker[0];
+        if (trimmed.length >= codeFenceMarker.length &&
+            trimmed === openChar.repeat(trimmed.length)) {
+          insideCodeFence = false;
+          codeFenceMarker = '';
+        }
       }
       continue;
     }
@@ -47,6 +53,17 @@ export function extractWikilinks(
           level: 'warning',
           source: 'wikilink',
           message: 'Empty wikilink target',
+          line: startLine + i,
+        });
+        continue;
+      }
+
+      // Warn on nested brackets (escaped delimiter is already split by regex, so only check brackets)
+      if (target.includes('[[') || target.includes(']]')) {
+        errors.push({
+          level: 'warning',
+          source: 'wikilink',
+          message: `Malformed wikilink target with nested brackets or escaped delimiter: "${target}"`,
           line: startLine + i,
         });
         continue;

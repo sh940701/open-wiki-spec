@@ -106,6 +106,11 @@ ${opts.knownGaps || '<!-- No known gaps specified in original spec -->'}
 
 ${opts.requirementsBlock || '<!-- No requirements found in original spec -->'}
 
+## Change Log
+
+| Date | Change | Summary |
+|------|--------|---------|
+
 ## Related Notes
 `;
 }

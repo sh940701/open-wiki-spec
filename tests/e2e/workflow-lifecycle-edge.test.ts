@@ -838,20 +838,26 @@ describe('Group 3: Verify edge cases', () => {
     );
     expect(result.success).toBe(true);
 
-    // The feature now has apply markers. Manually set status to applied
-    // if it wasn't auto-transitioned (ADDED is agent-driven, but without
-    // noAutoTransition, it does auto-transition).
-    // The feature should now contain markers like <!-- ADDED by change: -->
+    // Apply inserts ADDED skeletons in the Feature but — per the updated
+    // safety policy — does NOT auto-transition the Change to `applied`
+    // while agent-driven markers remain unfilled. Confirm the warning
+    // was surfaced and the Change stays in `in_progress` until the user
+    // fills the markers and re-runs apply.
+    expect(result.statusTransitioned).toBe(false);
+    expect(
+      result.warnings.some((w) => w.includes('Auto-transition to "applied" blocked')),
+    ).toBe(true);
     const featureContent = readFile(path.join(wikiPath, '03-features', 'user-auth.md'));
     expect(featureContent).toContain('<!-- ADDED by change:');
 
-    // Rebuild index and verify — should detect UNFILLED_APPLY_MARKER
+    // Rebuild index and confirm the Change is still in_progress (apply
+    // guarded the transition). The old behavior transitioned to
+    // `applied` and relied on `UNFILLED_APPLY_MARKER` to catch it
+    // after the fact — the new behavior prevents the lie up front.
     const index2 = buildIndex(vaultRoot);
-    const report = verify(index2, { changeId: 'unfilled-markers' });
-
-    const markerIssues = report.issues.filter(i => i.code === 'UNFILLED_APPLY_MARKER');
-    expect(markerIssues.length).toBeGreaterThan(0);
-    expect(report.pass).toBe(false);
+    const changeRec = index2.records.get('unfilled-markers');
+    expect(changeRec).toBeDefined();
+    expect(changeRec!.status).toBe('in_progress');
   });
 
   // Test 14: Verify empty required sections
@@ -1088,20 +1094,23 @@ None.
     );
     expect(applyResult.success).toBe(true);
 
-    // Feature now has unfilled markers
+    // Feature now has unfilled markers, and per the new safety policy
+    // the Change stayed in `in_progress` because agent ops remain.
     const featureContent = readFile(path.join(wikiPath, '03-features', 'user-auth.md'));
     expect(featureContent).toContain('<!-- ADDED by change:');
 
-    // Try to archive — verify should block because of unfilled markers
     const index2 = buildIndex(vaultRoot);
     const changeRec = index2.records.get('archive-verify-fail');
     expect(changeRec).toBeDefined();
-    expect(changeRec!.status).toBe('applied');
+    expect(changeRec!.status).toBe('in_progress');
 
-    // Without --force, should throw
-    expect(() => archiveChange('archive-verify-fail', index2, vaultRoot)).toThrow(/Verify found/);
+    // Archive refuses non-applied changes without --force (was "Only
+    // applied changes can be archived"). With --force, it archives the
+    // in-progress change despite the unfilled markers.
+    expect(() => archiveChange('archive-verify-fail', index2, vaultRoot)).toThrow(
+      /Only applied changes can be archived/,
+    );
 
-    // With --force, should succeed
     const archiveResult = archiveChange('archive-verify-fail', index2, vaultRoot, { force: true });
     expect(archiveResult.changeId).toBe('archive-verify-fail');
     expect(archiveResult.newPath).toContain('99-archive');

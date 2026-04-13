@@ -76,11 +76,20 @@ export function ambiguousAliasCheck(index: VaultIndex): VerifyIssue[] {
 /**
  * Check for orphan notes (notes with no incoming or outgoing links).
  * Meta files are excluded from this check.
+ *
+ * Bootstrap exemption: if the vault contains only a single typed note, it
+ * cannot possibly link anywhere (there is nothing to link to), so flagging
+ * it as an orphan is noise that would break the first-note experience
+ * under `--strict`. Skip the check in that case.
  */
 export function orphanNoteCheck(index: VaultIndex): VerifyIssue[] {
   const issues: VerifyIssue[] = [];
-  for (const record of index.records.values()) {
-    if (record.path.startsWith('wiki/00-meta/')) continue;
+  const typedNotes = Array.from(index.records.values()).filter(
+    (r) => !r.path.startsWith('wiki/00-meta/'),
+  );
+  if (typedNotes.length <= 1) return issues;
+
+  for (const record of typedNotes) {
     if (record.links_in.length === 0 && record.links_out.length === 0) {
       issues.push({
         dimension: 'vault_integrity',
@@ -98,9 +107,21 @@ export function orphanNoteCheck(index: VaultIndex): VerifyIssue[] {
 
 /**
  * Check for notes in 99-archive/ that don't have 'applied' status.
+ * Also check that note type matches its typed folder location (e.g., feature → 03-features/).
  */
 export function archivePlacementCheck(index: VaultIndex): VerifyIssue[] {
   const issues: VerifyIssue[] = [];
+
+  // Expected folder per note type (archived notes exempt — they live in 99-archive/)
+  const TYPE_TO_FOLDER: Record<string, string> = {
+    source: 'wiki/01-sources/',
+    system: 'wiki/02-systems/',
+    feature: 'wiki/03-features/',
+    change: 'wiki/04-changes/',
+    decision: 'wiki/05-decisions/',
+    query: 'wiki/06-queries/',
+  };
+
   for (const record of index.records.values()) {
     const isInArchive = record.path.startsWith('wiki/99-archive/');
     if (isInArchive && record.status !== 'applied') {
@@ -113,6 +134,22 @@ export function archivePlacementCheck(index: VaultIndex): VerifyIssue[] {
         note_path: record.path,
         suggestion: 'Only applied changes should be in the archive. Move the note back or update its status.',
       });
+    }
+
+    // Type/folder mismatch check (skip archived notes — they're allowed anywhere under 99-archive/)
+    if (!isInArchive) {
+      const expectedFolder = TYPE_TO_FOLDER[record.type];
+      if (expectedFolder && !record.path.startsWith(expectedFolder)) {
+        issues.push({
+          dimension: 'vault_integrity',
+          severity: 'error',
+          code: 'TYPE_FOLDER_MISMATCH',
+          message: `Note "${record.id}" has type "${record.type}" but is located in "${record.path}" instead of "${expectedFolder}"`,
+          note_id: record.id,
+          note_path: record.path,
+          suggestion: `Move the note to ${expectedFolder} or correct the "type" field in frontmatter.`,
+        });
+      }
     }
   }
   return issues;
@@ -177,6 +214,56 @@ export function titleIdCollisionCheck(index: VaultIndex): VerifyIssue[] {
       }
     }
   }
+  return issues;
+}
+
+/**
+ * Common secret patterns that should never appear in vault frontmatter.
+ * Scans values (not keys) for these patterns and warns the user.
+ */
+const SECRET_PATTERNS: { name: string; regex: RegExp }[] = [
+  { name: 'OpenAI API key', regex: /\bsk-[A-Za-z0-9]{20,}\b/ },
+  { name: 'Anthropic API key', regex: /\bsk-ant-[A-Za-z0-9-]{20,}\b/ },
+  { name: 'GitHub token', regex: /\bghp_[A-Za-z0-9]{30,}\b/ },
+  { name: 'GitHub fine-grained token', regex: /\bgithub_pat_[A-Za-z0-9_]{30,}\b/ },
+  // AWS long-lived (AKIA) and temporary session (ASIA) access key IDs
+  { name: 'AWS access key', regex: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/ },
+  { name: 'Google API key', regex: /\bAIza[0-9A-Za-z_-]{35}\b/ },
+  // GCP service account key (JSON)
+  { name: 'GCP service account key', regex: /"type"\s*:\s*"service_account"/ },
+  { name: 'Slack token', regex: /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/ },
+  { name: 'JWT token', regex: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/ },
+  { name: 'Private key header', regex: /-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----/ },
+  // Generic "password = ..." or "secret = ..." in config-like blocks
+  { name: 'Hardcoded credential', regex: /(?:password|secret|token|api_key)\s*[:=]\s*["'][A-Za-z0-9+/=_-]{16,}["']/i },
+];
+
+/**
+ * Scan note body for accidental secret leakage.
+ * Returns warnings (not errors) to encourage removal without blocking work.
+ */
+export function secretLeakCheck(notes: IndexRecord[]): VerifyIssue[] {
+  const issues: VerifyIssue[] = [];
+
+  for (const note of notes) {
+    // Scan the raw_text (body) for secret patterns
+    const scanText = note.raw_text ?? '';
+    for (const { name, regex } of SECRET_PATTERNS) {
+      if (regex.test(scanText)) {
+        issues.push({
+          dimension: 'vault_integrity' as const,
+          severity: 'warning' as const,
+          code: 'POTENTIAL_SECRET_LEAK',
+          message: `Note "${note.id}" may contain a ${name}`,
+          note_id: note.id,
+          note_path: note.path,
+          suggestion: 'Remove the secret and rotate the credential. Use environment variables instead.',
+        });
+        break; // one warning per note is enough
+      }
+    }
+  }
+
   return issues;
 }
 

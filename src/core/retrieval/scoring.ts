@@ -32,6 +32,14 @@ export function scoreCandidates(
     const record = index.records.get(id);
     if (!record) continue;
 
+    // Exclude archived changes from active retrieval unless the record type
+    // is not a change (Feature/System/Decision/Source/Query can be archived
+    // but shouldn't be filtered out just because a change references them).
+    // The path-based check catches notes physically located in 99-archive/.
+    if (record.type === 'change' && record.path.includes('99-archive/')) {
+      continue;
+    }
+
     const signals: ScoringSignal[] = [];
 
     // Signal 1: Title match (exact, prefix-stripped, or partial)
@@ -59,9 +67,14 @@ export function scoreCandidates(
       });
     }
 
-    // Signal 2: Alias match (at most once)
+    // Signal 2: Alias match (at most once, skip if alias duplicates the title match)
+    const titleAlreadyMatched = signals.some((s) => s.signal === 'exact_title');
     for (const alias of record.aliases) {
       const aliasLower = alias.toLowerCase();
+      // Skip alias if it's the same as the title or prefix-stripped title (avoids double-counting)
+      if (titleAlreadyMatched && (aliasLower === titleLower || aliasLower === titleWithoutPrefix)) {
+        continue;
+      }
       if (searchTerms.some((t) => aliasLower.includes(t))) {
         signals.push({
           signal: 'alias_match',
@@ -196,26 +209,44 @@ export function scoreCandidates(
 
     // Signal 10: Semantic similarity (embedding-based, section 9.2)
     if (embeddingScores && weights.semantic_similarity) {
-      const similarity = embeddingScores.get(id);
-      if (similarity !== undefined && similarity > 0.7) {
-        const points = Math.round(similarity * weights.semantic_similarity);
-        signals.push({
-          signal: 'semantic_similarity',
-          points,
-          reason: `semantic match: ${similarity.toFixed(2)}`,
-        });
+      const rawSimilarity = embeddingScores.get(id);
+      // Guard against NaN/Infinity and out-of-range values polluting the
+      // score. Cosine similarity should be in [0, 1] for normalized
+      // vectors, but corrupt cache entries or unusual embedder outputs
+      // can produce values > 1 or < 0. Clamp to [0, 1] so a bad score
+      // cannot overwhelm lexical signals and distort classification.
+      if (
+        typeof rawSimilarity === 'number' &&
+        Number.isFinite(rawSimilarity) &&
+        Number.isFinite(weights.semantic_similarity)
+      ) {
+        const similarity = Math.max(0, Math.min(1, rawSimilarity));
+        if (similarity > 0.7) {
+          const points = Math.round(similarity * weights.semantic_similarity);
+          if (Number.isFinite(points)) {
+            signals.push({
+              signal: 'semantic_similarity',
+              points,
+              reason: `semantic match: ${similarity.toFixed(2)}`,
+            });
+          }
+        }
       }
     }
 
-    // Compute total score
-    let totalScore = signals.reduce((sum, s) => sum + s.points, 0);
+    // Compute total score — filter any non-finite signals before summing so
+    // one bad weight cannot poison the whole record's score.
+    let totalScore = signals.reduce(
+      (sum, s) => (Number.isFinite(s.points) ? sum + s.points : sum),
+      0,
+    );
 
     // Status bias bonus (minor tiebreaker)
     if (query.status_bias.includes(record.status)) {
       totalScore += 5;
     }
 
-    if (totalScore > 0) {
+    if (Number.isFinite(totalScore) && totalScore > 0) {
       scored.push({
         id: record.id,
         type: record.type,

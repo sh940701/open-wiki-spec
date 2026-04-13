@@ -483,7 +483,14 @@ describe('applyChange', () => {
 
     const deps = makeDeps({
       parseNote: vi.fn().mockImplementation((path: string) => parseResults.get(path) ?? makeParsed()),
-      readFile: vi.fn().mockReturnValue('---\nstatus: in_progress\n---\n'),
+      // Feature file must include ## Requirements section so the real
+      // applyDeltaToFeature finds the section boundary for REMOVED ops.
+      readFile: vi.fn().mockImplementation((p: string) => {
+        if (p.includes('feature-auth')) {
+          return '---\nstatus: active\n---\n\n## Requirements\n\n### Requirement: OldLogin\n\nUser SHALL log in\n\n## Change Log\n';
+        }
+        return '---\nstatus: in_progress\n---\n';
+      }),
     });
 
     const result = applyChange({ changeId: 'change-test', vaultRoot: '/tmp/test-vault' }, index, deps);
@@ -521,7 +528,12 @@ describe('applyChange section ops', () => {
 
     const deps = makeDeps({
       parseNote: vi.fn().mockImplementation((path: string) => parseResults.get(path) ?? makeParsed()),
-      readFile: vi.fn().mockReturnValue('---\nstatus: in_progress\n---\n'),
+      readFile: vi.fn().mockImplementation((p: string) => {
+        if (p.includes('feature-auth')) {
+          return '---\nstatus: active\n---\n\n## Requirements\n\n### Requirement: Login\n\nUser SHALL log in\n\n## Change Log\n';
+        }
+        return '---\nstatus: in_progress\n---\n';
+      }),
     });
 
     const result = applyChange({ changeId: 'change-test', vaultRoot }, index, deps);
@@ -566,7 +578,12 @@ describe('applyChange atomic writes', () => {
     const movedFiles: { from: string; to: string }[] = [];
     const deps = makeDeps({
       parseNote: vi.fn().mockImplementation((path: string) => parseResults.get(path) ?? makeParsed()),
-      readFile: vi.fn().mockReturnValue('---\nstatus: in_progress\n---\n'),
+      readFile: vi.fn().mockImplementation((p: string) => {
+        if (p.includes('feature-auth')) {
+          return '---\nstatus: active\n---\n\n## Requirements\n\n### Requirement: OldLogin\n\nUser SHALL log in\n\n## Change Log\n';
+        }
+        return '---\nstatus: in_progress\n---\n';
+      }),
       writeFile: vi.fn().mockImplementation((path: string) => { writtenFiles.push(path); }),
       moveFile: vi.fn().mockImplementation((from: string, to: string) => { movedFiles.push({ from, to }); }),
     });
@@ -607,7 +624,12 @@ describe('applyChange atomic writes', () => {
     const deletedFiles: string[] = [];
     const deps = makeDeps({
       parseNote: vi.fn().mockImplementation((path: string) => parseResults.get(path) ?? makeParsed()),
-      readFile: vi.fn().mockReturnValue('---\nstatus: in_progress\n---\n'),
+      readFile: vi.fn().mockImplementation((p: string) => {
+        if (p.includes('feature-auth')) {
+          return '---\nstatus: active\n---\n\n## Requirements\n\n### Requirement: OldLogin\n\nUser SHALL log in\n\n## Change Log\n';
+        }
+        return '---\nstatus: in_progress\n---\n';
+      }),
       writeFile: vi.fn(),
       moveFile: vi.fn().mockImplementation(() => { throw new Error('rename failed'); }),
       deleteFile: vi.fn().mockImplementation((path: string) => { deletedFiles.push(path); }),

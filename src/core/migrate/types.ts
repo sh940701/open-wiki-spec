@@ -128,4 +128,13 @@ export interface MigrateOptions {
   skipArchive?: boolean;
   /** Output as JSON */
   json?: boolean;
+  /**
+   * Allow migration to proceed even when a `wiki/` directory with typed
+   * notes already exists at the target path. Without this flag, migrate
+   * refuses so the user doesn't silently interleave an openspec import
+   * into an already-bootstrapped vault — which causes half-merged state
+   * that only surfaces later as `filesSkipped` entries and unresolved
+   * wikilinks. Setting this flag acknowledges the risk explicitly.
+   */
+  allowExistingVault?: boolean;
 }

@@ -2,14 +2,32 @@ import type { DeltaEntry, DeltaPlan } from './types.js';
 import type { ParseResult } from '../../parser/types.js';
 import type { VaultIndex } from '../../../types/index-record.js';
 
+// Requirement name body: any char except unescaped quote. Supports \" escape.
+// Matches: "simple", "say \"hi\"", "contains \\ backslash"
+const QUOTED_NAME = '(?:[^"\\\\]|\\\\.)*';
+
 const REQUIREMENT_OP_RE =
-  /^-\s+(ADDED|MODIFIED|REMOVED)\s+requirement\s+"([^"]+)"\s+(to|in|from)\s+\[\[([^\]]+)\]\](?:\s+\[base:\s*((?:sha256:[a-f0-9]+)|n\/a)\])?/;
+  new RegExp(
+    `^-\\s+(ADDED|MODIFIED|REMOVED)\\s+requirement\\s+"(${QUOTED_NAME})"\\s+(to|in|from)\\s+\\[\\[([^\\]]+)\\]\\](?:\\s+\\[base:\\s*((?:sha256:[a-f0-9]+)|n\\/a|migrated)\\])?`,
+  );
 
 const RENAMED_RE =
-  /^-\s+RENAMED\s+requirement\s+"([^"]+)"\s+to\s+"([^"]+)"\s+in\s+\[\[([^\]]+)\]\](?:\s+\[base:\s*((?:sha256:[a-f0-9]+)|n\/a)\])?/;
+  new RegExp(
+    `^-\\s+RENAMED\\s+requirement\\s+"(${QUOTED_NAME})"\\s+to\\s+"(${QUOTED_NAME})"\\s+in\\s+\\[\\[([^\\]]+)\\]\\](?:\\s+\\[base:\\s*((?:sha256:[a-f0-9]+)|n\\/a|migrated)\\])?`,
+  );
 
 const SECTION_OP_RE =
-  /^-\s+(ADDED|MODIFIED|REMOVED)\s+section\s+"([^"]+)"\s+(to|in|from)\s+\[\[([^\]]+)\]\](?::\s*(.+))?/;
+  new RegExp(
+    `^-\\s+(ADDED|MODIFIED|REMOVED)\\s+section\\s+"(${QUOTED_NAME})"\\s+(to|in|from)\\s+\\[\\[([^\\]]+)\\]\\](?::\\s*(.+))?`,
+  );
+
+/**
+ * Unescape a quoted-string value captured by the delta regex.
+ * Reverses `\"` → `"` and `\\` → `\`.
+ */
+function unescapeQuoted(value: string): string {
+  return value.replace(/\\(.)/g, '$1');
+}
 
 /**
  * Parse Delta Summary entries from a Change note's parsed result.
@@ -28,7 +46,13 @@ export function parseDeltaSummary(
   const entries: DeltaEntry[] = [];
   const warnings: string[] = [];
 
+  // Track line number within the Delta Summary section (1-based) so error
+  // messages can point at the exact malformed line. Using a section-local
+  // counter keeps the number meaningful across narrative bullets and
+  // code-fence content that split() produces.
+  let lineNumber = 0;
   for (const line of lines) {
+    lineNumber++;
     const trimmed = line.trim();
     if (!trimmed || !trimmed.startsWith('-')) continue;
 
@@ -39,8 +63,8 @@ export function parseDeltaSummary(
       entries.push({
         op: 'RENAMED',
         targetType: 'requirement',
-        targetName: renamedMatch[1],
-        newName: renamedMatch[2],
+        targetName: unescapeQuoted(renamedMatch[1]),
+        newName: unescapeQuoted(renamedMatch[2]),
         targetNote: renamedMatch[3],
         targetNoteId,
         baseFingerprint: parseBaseFingerprint(renamedMatch[4]),
@@ -56,7 +80,7 @@ export function parseDeltaSummary(
       entries.push({
         op: reqMatch[1] as 'ADDED' | 'MODIFIED' | 'REMOVED',
         targetType: 'requirement',
-        targetName: reqMatch[2],
+        targetName: unescapeQuoted(reqMatch[2]),
         targetNote: reqMatch[4],
         targetNoteId,
         baseFingerprint: parseBaseFingerprint(reqMatch[5]),
@@ -72,7 +96,7 @@ export function parseDeltaSummary(
       entries.push({
         op: secMatch[1] as 'ADDED' | 'MODIFIED' | 'REMOVED',
         targetType: 'section',
-        targetName: secMatch[2],
+        targetName: unescapeQuoted(secMatch[2]),
         targetNote: secMatch[4],
         targetNoteId,
         baseFingerprint: null,
@@ -82,9 +106,14 @@ export function parseDeltaSummary(
       continue;
     }
 
-    // Unrecognized line
+    // Unrecognized line. Include the relative line number so users can
+    // jump to it quickly — the apply command promotes these warnings to
+    // errors, and without a line number they have to eyeball the whole
+    // Delta Summary to find the broken entry.
     if (trimmed.match(/^-\s+(ADDED|MODIFIED|REMOVED|RENAMED)/)) {
-      warnings.push(`Unparseable Delta Summary entry: "${trimmed}"`);
+      warnings.push(
+        `Unparseable Delta Summary entry (section-relative line ${lineNumber}): "${trimmed}"`,
+      );
     }
   }
 
@@ -161,6 +190,25 @@ export function validateDeltaConflicts(plan: DeltaPlan): string[] {
       }
       if (added.has(to)) {
         errors.push(`"${to}" in ${noteKey}: RENAMED TO + ADDED collision`);
+      }
+      // RENAMED A→B + REMOVED B: the atomic order RENAMED→REMOVED
+      // would rename A to B, then immediately remove B, leaving both
+      // A and B gone. That almost never matches author intent (they
+      // probably meant REMOVE A directly) and is unreachable to audit
+      // after the fact. Block it.
+      if (removed.has(to)) {
+        errors.push(
+          `"${to}" in ${noteKey}: RENAMED "${from}" TO "${to}" + REMOVED "${to}" — both requirements disappear. ` +
+            `If you meant to delete "${from}", use REMOVED "${from}" directly.`,
+        );
+      }
+      // RENAMED A→B + REMOVED A: A is gone twice. REMOVED runs before
+      // RENAMED in the atomic order, so REMOVED A would succeed, then
+      // RENAMED A→B would fail ("not found"). Surface up front.
+      if (removed.has(from)) {
+        errors.push(
+          `"${from}" in ${noteKey}: RENAMED "${from}" TO "${to}" + REMOVED "${from}" — the old name is removed before rename runs.`,
+        );
       }
     }
   }

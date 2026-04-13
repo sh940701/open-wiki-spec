@@ -5,6 +5,8 @@ export interface BaseFrontmatter {
   id: string;
   status: string;
   tags: string[];
+  /** Obsidian-compatible aliases for the note. */
+  aliases?: string[];
 }
 
 export interface FeatureFrontmatter extends BaseFrontmatter {
@@ -25,8 +27,8 @@ export interface ChangeFrontmatter extends BaseFrontmatter {
   depends_on: string[];
   touches: string[];
   systems: string[];
-  sources: string[];
-  decisions: string[];
+  sources?: string[];
+  decisions?: string[];
 }
 
 export interface SystemFrontmatter extends BaseFrontmatter {
@@ -53,6 +55,11 @@ export interface QueryFrontmatter extends BaseFrontmatter {
   consulted?: string[];
   features?: string[];
   systems?: string[];
+  changes?: string[];
+  decisions?: string[];
+  sources?: string[];
+  related_queries?: string[];
+  created_at?: string;
 }
 
 export type Frontmatter =

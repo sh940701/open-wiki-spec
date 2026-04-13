@@ -69,7 +69,19 @@ export function buildIndex(vaultRoot: string, options?: BuildOptions): VaultInde
       continue;
     }
 
-    const result = parseNoteToRawRecord(file, schemaVersion);
+    // Catch ENOENT gracefully: files may be deleted between scan and parse.
+    // Without this, a single deleted file would abort the entire index build.
+    let result;
+    try {
+      result = parseNoteToRawRecord(file, schemaVersion);
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'EACCES') {
+        // File vanished or became unreadable — skip silently
+        continue;
+      }
+      throw err;
+    }
     if (result.invalidFrontmatter) {
       invalidFrontmatterPaths.push(file.path);
       continue;
@@ -96,11 +108,22 @@ export function buildIndex(vaultRoot: string, options?: BuildOptions): VaultInde
   const records = new Map<string, IndexRecord>();
   const duplicateIds = detectDuplicateIds(rawRecords);
 
+  // Sort duplicate path groups up front with a locale-independent collator
+  // so the "keep first occurrence" decision is deterministic regardless
+  // of host locale (Korean, Japanese, Turkish users would otherwise see
+  // different winners from the same vault). Using `numeric: true` also
+  // orders `part-2` before `part-10`, matching human expectations.
+  const pathCollator = new Intl.Collator('en', { numeric: true, sensitivity: 'variant' });
+  const dedupedWinner = new Map<string, string>();
+  for (const [dupId, paths] of duplicateIds) {
+    const sorted = [...paths].sort((a, b) => pathCollator.compare(a, b));
+    dedupedWinner.set(dupId, sorted[0]);
+  }
+
   for (const raw of rawRecords) {
     // Skip duplicate ids (keep first occurrence by path sort order)
     if (duplicateIds.has(raw.id)) {
-      const paths = duplicateIds.get(raw.id)!;
-      if (raw.path !== paths.sort()[0]) {
+      if (raw.path !== dedupedWinner.get(raw.id)) {
         continue;
       }
     }
@@ -157,9 +180,15 @@ function parseNoteToRawRecord(
     return { raw: null, missingId: true, invalidFrontmatter: false };
   }
 
-  // Extract title from first H1 heading or frontmatter id
+  // Extract title from first H1 heading or frontmatter id.
+  // Cap at 200 chars to stay within filesystem path limits (Windows 260-char limit,
+  // plus vault prefix overhead). Unicode grapheme clusters are preserved.
+  const MAX_TITLE_LENGTH = 200;
   const h1 = parseResult.sections.find(s => s.level === 1);
-  const title = h1?.title ?? fm.id;
+  const rawTitle = h1?.title ?? fm.id;
+  const title = rawTitle.length > MAX_TITLE_LENGTH
+    ? rawTitle.slice(0, MAX_TITLE_LENGTH)
+    : rawTitle;
 
   const getArray = (key: string): string[] => {
     const val = (fm as Record<string, unknown>)[key];
@@ -242,6 +271,24 @@ function resolveRecordLinks(
     return ids;
   }
 
+  // Like resolveArray but keeps unresolved wikilinks as raw tokens
+  // so downstream blocking logic can detect them
+  function resolveArrayKeepUnresolved(rawLinks: string[]): string[] {
+    const ids: string[] = [];
+    for (const raw of rawLinks) {
+      const result = resolveWikilink(raw, lookups);
+      if (isResolved(result)) {
+        ids.push(result.target_id);
+      } else {
+        errors.push({ source_id: rawRecord.id, source_path: rawRecord.path, ...result });
+        // Preserve raw token so blocking logic knows a dependency exists
+        const stripped = raw.replace(/^\[\[/, '').replace(/\]\]$/, '').replace(/"/g, '');
+        if (stripped) ids.push(stripped);
+      }
+    }
+    return ids;
+  }
+
   function resolveSingle(raw: string | null): string | undefined {
     if (raw === null) return undefined;
     const result = resolveWikilink(raw, lookups);
@@ -266,7 +313,7 @@ function resolveRecordLinks(
     changes: resolveArray(rawRecord.changes_raw),
     feature: resolveSingle(rawRecord.feature_raw),
     features: rawRecord.features_raw ? resolveArray(rawRecord.features_raw) : undefined,
-    depends_on: resolveArray(rawRecord.depends_on_raw),
+    depends_on: resolveArrayKeepUnresolved(rawRecord.depends_on_raw),
     touches: resolveArray(rawRecord.touches_raw),
     links_out: resolveArray(rawRecord.links_out_raw),
     links_in: [], // populated by computeReverseIndex

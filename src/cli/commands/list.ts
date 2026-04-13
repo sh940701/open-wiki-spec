@@ -4,23 +4,11 @@ import { handleCliError } from "./error-handler.js";
  */
 import type { Command } from 'commander';
 import { discoverVaultPath } from '../vault-discovery.js';
+import { warnOnUnsupportedSchema } from '../schema-check.js';
+import { jsonEnvelope } from '../json-envelope.js';
 import type { VaultIndex, IndexRecord } from '../../types/index.js';
-import type { NoteType } from '../../types/notes.js';
-
-export interface ListItem {
-  id: string;
-  type: NoteType;
-  title: string;
-  status: string;
-  path: string;
-  linkedFeature?: string;
-  taskProgress?: { total: number; completed: number };
-}
-
-export interface ListResult {
-  type: 'changes' | 'features' | 'all';
-  items: ListItem[];
-}
+import type { ListItem, ListResult } from '../../types/cli-contracts.js';
+export type { ListItem, ListResult };
 
 export function registerListCommand(program: Command): void {
   program
@@ -34,12 +22,13 @@ export function registerListCommand(program: Command): void {
         const vaultPath = discoverVaultPath();
         const { buildIndex } = await import('../../core/index/index.js');
         const index = await buildIndex(vaultPath);
+        warnOnUnsupportedSchema(index);
 
         const filterType = opts.changes ? 'changes' : opts.features ? 'features' : 'all';
         const result = listNotes(index, filterType);
 
         if (opts.json) {
-          console.log(JSON.stringify(result, null, 2));
+          console.log(jsonEnvelope('list', result));
         } else {
           if (result.items.length === 0) {
             console.log('No notes found.');
@@ -87,7 +76,15 @@ export function listNotes(index: VaultIndex, filterType: 'changes' | 'features' 
     items.push(item);
   }
 
-  // Sort by status priority then by id
+  // Sort by status priority then by id.
+  //
+  // Sort stability: we use `Intl.Collator` pinned to `en` and numeric
+  // ordering because the plain `a.id.localeCompare(b.id)` default is
+  // locale-dependent — Korean, Japanese, and Turkish users would get
+  // different orders for the same vault, breaking reproducibility of
+  // `--json` output across machines. Pinning to `en` (ids are ASCII
+  // slugs anyway) keeps CI diffs stable while `numeric: true` handles
+  // mixed ids like `change-2` vs `change-10` correctly.
   const statusPriority: Record<string, number> = {
     in_progress: 0,
     planned: 1,
@@ -99,11 +96,12 @@ export function listNotes(index: VaultIndex, filterType: 'changes' | 'features' 
     deprecated: 7,
   };
 
+  const idCollator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
   items.sort((a, b) => {
     const ap = statusPriority[a.status] ?? 99;
     const bp = statusPriority[b.status] ?? 99;
     if (ap !== bp) return ap - bp;
-    return a.id.localeCompare(b.id);
+    return idCollator.compare(a.id, b.id);
   });
 
   return { type: filterType, items };

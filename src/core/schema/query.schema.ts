@@ -12,6 +12,11 @@ export const QueryFrontmatterSchema = BaseFrontmatterSchema.extend({
   consulted: z.array(WikilinkRefSchema).optional(),
   features: z.array(WikilinkRefSchema).optional(),
   systems: z.array(WikilinkRefSchema).optional(),
+  changes: z.array(WikilinkRefSchema).optional(),
+  decisions: z.array(WikilinkRefSchema).optional(),
+  sources: z.array(WikilinkRefSchema).optional(),
+  related_queries: z.array(WikilinkRefSchema).optional(),
+  created_at: z.string().optional(),
 });
 
 export type QueryFrontmatter = z.infer<typeof QueryFrontmatterSchema>;

@@ -5,6 +5,7 @@ import { handleCliError } from "./error-handler.js";
 import type { Command } from 'commander';
 import { migrate, planMigration } from '../../core/migrate/migrate.js';
 import type { MigrateOptions, MigrationPlan, MigrationResult } from '../../core/migrate/types.js';
+import { jsonEnvelope } from '../json-envelope.js';
 
 export function registerMigrateCommand(program: Command): void {
   program
@@ -13,10 +14,12 @@ export function registerMigrateCommand(program: Command): void {
     .option('--dry-run', 'Show what would be migrated without writing files')
     .option('--json', 'Output result as JSON')
     .option('--skip-archive', 'Skip migrating archived changes')
+    .option('--allow-existing-vault', 'Allow migrating into a vault that already contains typed notes (risk: silent skip of conflicting files)')
     .action(async (openspecDir: string | undefined, opts: {
       dryRun?: boolean;
       json?: boolean;
       skipArchive?: boolean;
+      allowExistingVault?: boolean;
     }) => {
       try {
         const options: MigrateOptions = {
@@ -24,19 +27,20 @@ export function registerMigrateCommand(program: Command): void {
           dryRun: opts.dryRun,
           skipArchive: opts.skipArchive,
           json: opts.json,
+          allowExistingVault: opts.allowExistingVault,
         };
 
         if (opts.dryRun) {
           const plan = planMigration(options);
           if (opts.json) {
-            console.log(JSON.stringify(plan, null, 2));
+            console.log(jsonEnvelope('migrate', plan));
           } else {
             printPlan(plan);
           }
         } else {
           const result = await migrate(options);
           if (opts.json) {
-            console.log(JSON.stringify(result, null, 2));
+            console.log(jsonEnvelope('migrate', result));
           } else {
             printResult(result);
           }
@@ -45,12 +49,7 @@ export function registerMigrateCommand(program: Command): void {
           }
         }
       } catch (err: unknown) {
-        if (opts.json) {
-          console.log(JSON.stringify({ error: (err as Error).message }));
-        } else {
-          handleCliError(err, opts.json);
-        }
-        process.exitCode = 1;
+        handleCliError(err, opts.json);
       }
     });
 }

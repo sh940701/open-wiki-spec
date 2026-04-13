@@ -225,8 +225,8 @@ describe('Group 1: Missing/partial OpenSpec data', () => {
       expect(files).toHaveLength(1);
       const content = fs.readFileSync(path.join(archiveDir, files[0]), 'utf-8');
       expect(content).toContain('type: change');
-      // Feature ref should be empty since no specs exist
-      expect(content).toMatch(/feature:\s*""/);
+      // Feature ref should be a placeholder wikilink since no specs exist
+      expect(content).toMatch(/feature:\s*"\[\[Feature:/);
     });
 
     it('no feature or system notes created', () => {
@@ -812,7 +812,7 @@ describe('Group 5: Idempotency and re-run', () => {
       const featurePath = path.join(tmpDir, 'wiki', '03-features', 'idem-feature.md');
       const mtimeBefore = fs.statSync(featurePath).mtimeMs;
 
-      const result2 = await migrate({ projectPath: tmpDir });
+      const result2 = await migrate({ projectPath: tmpDir, allowExistingVault: true });
       expect(result2.filesWritten).toHaveLength(0);
       // Exact skip count: meta files + 1 source + 1 system + 1 feature + 1 change
       expect(result2.filesSkipped.length).toBeGreaterThanOrEqual(4);
@@ -856,8 +856,10 @@ describe('Group 5: Idempotency and re-run', () => {
       fs.unlinkSync(featureAPath);
       expect(fs.existsSync(featureAPath)).toBe(false);
 
-      // Re-run migration
-      const result2 = await migrate({ projectPath: tmpDir });
+      // Re-run migration — allowExistingVault is required for re-runs
+      // because migrate() now refuses to silently merge into a populated
+      // vault without the explicit opt-in.
+      const result2 = await migrate({ projectPath: tmpDir, allowExistingVault: true });
 
       // A was recreated
       expect(fs.existsSync(featureAPath)).toBe(true);
@@ -876,9 +878,62 @@ describe('Group 5: Idempotency and re-run', () => {
 
 // ─── Group 6: Post-migration workflow ───────────────────────────────────────
 
+// ── Group 6: Post-migration coherence (synthetic, always runs) ──
+describe('Group 6: Post-migration coherence (synthetic)', () => {
+  // Verify that applyFeatureChangeBacklinks (migrate.ts post-process)
+  // produces a vault whose Feature ↔ Change backlinks pass the default
+  // `verify(index)` coherence checks (no skipCoherence). Previously
+  // migrated vaults needed skipCoherence because Features lacked the
+  // reverse `changes:` links, causing MISSING_LINK errors.
+  it('migrated vault passes full verify (coherence included)', async () => {
+    const tmpDir = makeTmpDir('coherence');
+    try {
+      makeMinimalConfig(tmpDir, 'Synthetic backlink test.');
+      makeMinimalSpec(tmpDir, 'user-auth');
+      // Active change so it's not archived (archived changes skip verify logic)
+      makeMinimalProposal(tmpDir, '2026-01-01-add-oauth', {
+        archived: false,
+        capabilities: `## Capabilities\n\n### Modified Capabilities\n- \`user-auth\`: add oauth`,
+      });
+      makeMetadata(tmpDir, '2026-01-01-add-oauth', {
+        archived: false,
+        created: '2026-01-01',
+        touches: ['user-auth'],
+      });
+      makeDeltaSpec(tmpDir, '2026-01-01-add-oauth', 'user-auth',
+        `## ADDED Requirements\n\n### Requirement: OAuth\nThe system SHALL support OAuth.\n`,
+        false,
+      );
+
+      await migrate({ projectPath: tmpDir });
+
+      // Feature's changes: field should contain the backlink
+      const featureContent = fs.readFileSync(
+        path.join(tmpDir, 'wiki', '03-features', 'user-auth.md'),
+        'utf-8',
+      );
+      expect(featureContent).toMatch(/changes:\n\s*-\s*"\[\[Change:/);
+
+      // Default verify (skipCoherence=false) should not report
+      // MISSING_LINK for backlink mismatches.
+      const index = buildIndex(tmpDir);
+      const report = verify(index);
+      const backlinkErrors = report.issues.filter(
+        (i) =>
+          i.code === 'MISSING_LINK' &&
+          typeof i.message === 'string' &&
+          i.message.includes('does not link back'),
+      );
+      expect(backlinkErrors).toHaveLength(0);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
 const describeIfSyeong = HAS_SYEONG_DATA ? describe : describe.skip;
 
-describeIfSyeong('Group 6: Post-migration workflow (real Syeong_app data)', () => {
+describeIfSyeong('Group 6b: Post-migration workflow (real Syeong_app data)', () => {
   let tmpDir: string;
   let vaultRoot: string;
 
@@ -932,9 +987,14 @@ describeIfSyeong('Group 6: Post-migration workflow (real Syeong_app data)', () =
 
   // Test 19: Verify after migration
   describe('Test 19: Verify after migration passes', () => {
-    it('verify report has no migration-caused errors', () => {
+    it('verify report has no migration-caused errors (full coherence)', () => {
+      // End-to-end test that Feature ↔ Change backlinks
+      // (applyFeatureChangeBacklinks post-processing) let the default
+      // verify (skipCoherence: false) pass on freshly-migrated content.
+      // Previously this ran with skipCoherence: true, which hid the
+      // coherence-dimension `MISSING_LINK` backlink errors.
       const index = buildIndex(vaultRoot);
-      const report = verify(index, { skipCoherence: true });
+      const report = verify(index);
 
       // Filter out non-migration errors (INVALID_FRONTMATTER_TYPE from meta files is OK)
       const migrationErrors = report.issues.filter(

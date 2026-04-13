@@ -67,15 +67,16 @@ Run the open-wiki-spec propose workflow.
    ows propose "<summary>" --keywords "<keyword1>,<keyword2>,..." --json
    ```
 
-   For `needs_confirmation` (after user chooses), use `--force-classification` to override:
+   For `needs_confirmation` (after user chooses), use `--force-classification` AND `--force-target`:
    ```bash
    # User chose to create new Feature + Change:
-   ows propose "<summary>" --keywords "<keyword1>,<keyword2>,..." --force-classification new_feature --json
-   # User chose an existing Feature:
-   ows propose "<summary>" --keywords "<keyword1>,<keyword2>,..." --force-classification existing_feature --json
-   # User chose to continue an existing Change:
-   ows propose "<summary>" --keywords "<keyword1>,<keyword2>,..." --force-classification existing_change --json
+   ows propose "<summary>" --force-classification new_feature --json
+   # User chose an existing Feature (use the candidate id from dry-run):
+   ows propose "<summary>" --force-classification existing_feature --force-target "<candidate-id>" --json
+   # User chose to continue an existing Change (hand off to continue):
+   /ows-continue <candidate-change-id>
    ```
+   **IMPORTANT**: When user picks `existing_feature` or `existing_change`, always include `--force-target <id>` with the candidate's actual id from the dry-run results. Without it, the engine uses the top candidate which may not be what the user chose.
 
 6. **Show results**
 

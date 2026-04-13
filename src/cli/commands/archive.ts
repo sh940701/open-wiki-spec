@@ -32,19 +32,36 @@ export function archiveChange(
     throw new Error(`Change "${changeId}" not found in the vault index.`);
   }
 
+  // Prevent re-archiving: refuse if the change is already in 99-archive/
+  if (change.path.startsWith('wiki/99-archive/')) {
+    throw new Error(
+      `Change "${changeId}" is already archived at "${change.path}". ` +
+      `Archiving again would be a no-op.`,
+    );
+  }
+
+  const warnings: string[] = [];
+
   if (change.status !== 'applied') {
-    throw new Error(`Only applied changes can be archived. "${changeId}" has status "${change.status}".`);
+    if (!options?.force) {
+      throw new Error(
+        `Only applied changes can be archived. "${changeId}" has status "${change.status}". ` +
+        `Use --force to archive a non-applied change.`,
+      );
+    }
+    warnings.push(`Archived with status "${change.status}" (not applied). Use with caution.`);
   }
 
   // Run verify to confirm cleanly applied
   const verifyResult = verify(index, { changeId });
-  const warnings: string[] = [];
 
   if (!verifyResult.pass) {
     if (!options?.force) {
-      const errorCount = verifyResult.issues.filter((i) => i.severity === 'error').length;
+      const errorIssues = verifyResult.issues.filter((i) => i.severity === 'error');
+      const top3 = errorIssues.slice(0, 3).map((i) => `  - [${i.code}] ${i.message}`).join('\n');
+      const more = errorIssues.length > 3 ? `\n  ... and ${errorIssues.length - 3} more` : '';
       throw new Error(
-        `Verify found ${errorCount} error(s) for change "${changeId}". Use --force to archive anyway.`,
+        `Verify found ${errorIssues.length} error(s) for change "${changeId}":\n${top3}${more}\n\nFix the issues above or use --force to archive anyway.`,
       );
     }
     warnings.push(`Archived despite ${verifyResult.issues.length} verify issue(s).`);
@@ -95,14 +112,17 @@ export function registerArchiveCommand(program: import('commander').Command): vo
       try {
         const { discoverVaultPath } = await import('../vault-discovery.js');
         const { buildIndex } = await import('../../core/index/index.js');
+        const { warnOnUnsupportedSchema } = await import('../schema-check.js');
+        const { jsonEnvelope } = await import('../json-envelope.js');
         const vaultPath = discoverVaultPath();
         const index = await buildIndex(vaultPath);
+        warnOnUnsupportedSchema(index);
 
         const noLog = opts.log === false || process.env.OWS_NO_LOG === '1';
         const result = archiveChange(changeId, index, vaultPath, { force: opts.force, noLog });
 
         if (opts.json) {
-          console.log(JSON.stringify(result, null, 2));
+          console.log(jsonEnvelope('archive', result));
         } else {
           console.log(`Archived change "${changeId}"`);
           console.log(`  From: ${result.oldPath}`);

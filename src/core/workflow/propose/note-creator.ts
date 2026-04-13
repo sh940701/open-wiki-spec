@@ -13,7 +13,7 @@ export function createFeatureNote(
   vaultRoot: string,
   query: QueryObject,
   index: VaultIndex,
-  deps: Pick<ProposeDeps, 'writeFile'>,
+  deps: Pick<ProposeDeps, 'writeFile' | 'exclusiveCreateFile'>,
 ): { id: string; path: string; title: string } {
   const featureId = deduplicateId(generateId('feature', query.summary), index);
   const title = titleFromId(featureId, 'feature');
@@ -53,16 +53,45 @@ export function createFeatureNote(
     '',
     '## Requirements',
     '',
+    '## Change Log',
+    '',
+    '| Date | Change | Summary |',
+    '|------|--------|---------|',
+    '',
     '## Related Notes',
     '',
   ].join('\n');
 
-  const content = formatNoteContent(frontmatter, body);
-  const featurePath = join(vaultRoot, 'wiki', '03-features', `${slugFromId(featureId)}.md`);
-  assertInsideVault(featurePath, vaultRoot);
-  deps.writeFile(featurePath, content);
+  // Concurrent propose safety: same retry pattern as createChangeNote.
+  const finalResult = tryCreateWithSuffix(
+    featureId,
+    (id) => {
+      const path = join(vaultRoot, 'wiki', '03-features', `${slugFromId(id)}.md`);
+      assertInsideVault(path, vaultRoot);
+      const updatedTitle = titleFromId(id, 'feature');
+      const updatedNoteTitle = `Feature: ${updatedTitle}`;
+      const updatedFrontmatter = {
+        ...frontmatter,
+        id,
+        aliases: [updatedNoteTitle, updatedTitle],
+      };
+      const updatedBody = body.replace(`# ${noteTitle}`, `# ${updatedNoteTitle}`);
+      const content2 = formatNoteContent(updatedFrontmatter, updatedBody);
+      if (deps.exclusiveCreateFile) {
+        deps.exclusiveCreateFile(path, content2);
+      } else {
+        deps.writeFile(path, content2);
+      }
+      return path;
+    },
+  );
 
-  return { id: featureId, path: featurePath, title: noteTitle };
+  const finalTitle = titleFromId(finalResult.id, 'feature');
+  return {
+    id: finalResult.id,
+    path: finalResult.path,
+    title: `Feature: ${finalTitle}`,
+  };
 }
 
 /**
@@ -74,7 +103,7 @@ export function createChangeNote(
   query: QueryObject,
   sequencingFull: SequencingResult,
   index: VaultIndex,
-  deps: Pick<ProposeDeps, 'writeFile'>,
+  deps: Pick<ProposeDeps, 'writeFile' | 'exclusiveCreateFile'>,
 ): { id: string; path: string; title: string } {
   const changeId = deduplicateId(generateId('change', query.summary), index);
   const title = titleFromId(changeId, 'change');
@@ -130,12 +159,60 @@ export function createChangeNote(
     '',
   ].join('\n');
 
-  const content = formatNoteContent(frontmatter, body);
-  const changePath = join(vaultRoot, 'wiki', '04-changes', `${slugFromId(changeId)}.md`);
-  assertInsideVault(changePath, vaultRoot);
-  deps.writeFile(changePath, content);
+  // Concurrent propose safety: if two processes pick the same changeId at the
+  // same time, the first O_CREAT|O_EXCL write wins. The loser retries with a
+  // suffixed id (-2, -3, …) until it lands on a free slot.
+  const finalResult = tryCreateWithSuffix(
+    changeId,
+    (id) => {
+      const path = join(vaultRoot, 'wiki', '04-changes', `${slugFromId(id)}.md`);
+      assertInsideVault(path, vaultRoot);
+      const updatedFrontmatter = { ...frontmatter, id };
+      const body2 = body.replace(`# Change: ${title}`, `# Change: ${titleFromId(id, 'change')}`);
+      const content2 = formatNoteContent(updatedFrontmatter, body2);
+      if (deps.exclusiveCreateFile) {
+        deps.exclusiveCreateFile(path, content2);
+      } else {
+        deps.writeFile(path, content2);
+      }
+      return path;
+    },
+  );
 
-  return { id: changeId, path: changePath, title: `Change: ${title}` };
+  return {
+    id: finalResult.id,
+    path: finalResult.path,
+    title: `Change: ${titleFromId(finalResult.id, 'change')}`,
+  };
+}
+
+/**
+ * Try to create a note with the given id. If the exclusive-create fails with
+ * EEXIST (another concurrent propose created the same file), retry with
+ * `-2`, `-3`, ... suffixes up to a bounded number of attempts.
+ */
+function tryCreateWithSuffix(
+  baseId: string,
+  createFn: (id: string) => string,
+): { id: string; path: string } {
+  const MAX_ATTEMPTS = 10;
+  let currentId = baseId;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    try {
+      const path = createFn(currentId);
+      return { id: currentId, path };
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== 'EEXIST') {
+        throw err;
+      }
+      // Another process beat us to this id — bump suffix and retry
+      currentId = `${baseId}-${attempt + 2}`;
+    }
+  }
+  throw new Error(
+    `Failed to create note after ${MAX_ATTEMPTS} attempts — too many concurrent proposes for id "${baseId}".`,
+  );
 }
 
 /**
@@ -216,11 +293,21 @@ function findSystemByName(term: string, index: VaultIndex): IndexRecord | null {
 /**
  * If `id` already exists in the index (including archived records),
  * append `-2`, `-3`, etc. until a unique ID is found.
+ *
+ * Uses case-insensitive comparison to prevent collisions on case-insensitive
+ * filesystems (macOS default, Windows) where `feature-auth` and `Feature-Auth`
+ * would map to the same file.
  */
 function deduplicateId(id: string, index: VaultIndex): string {
-  if (!index.records.has(id)) return id;
+  // Build a case-insensitive set of existing IDs
+  const lowerIds = new Set<string>();
+  for (const existingId of index.records.keys()) {
+    lowerIds.add(existingId.toLowerCase());
+  }
+
+  if (!lowerIds.has(id.toLowerCase())) return id;
   let suffix = 2;
-  while (index.records.has(`${id}-${suffix}`)) {
+  while (lowerIds.has(`${id}-${suffix}`.toLowerCase())) {
     suffix++;
   }
   return `${id}-${suffix}`;

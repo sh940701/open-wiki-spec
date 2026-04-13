@@ -4,8 +4,7 @@
  */
 import type { VaultIndex, IndexRecord } from '../../../types/index.js';
 import type { VerifyIssue } from '../../../types/verify.js';
-
-const FEATURE_REQUIRED_SECTIONS = ['Purpose', 'Current Behavior', 'Requirements'];
+import { FEATURE_REQUIRED_SECTIONS } from '../../schema/feature.schema.js';
 const CHANGE_REQUIRED_SECTIONS = ['Why'];
 
 /** Sections whose body must contain meaningful content (not just a heading). */
@@ -18,7 +17,7 @@ const COMPLEX_CHANGE_DELTA_THRESHOLD = 3;
 
 /**
  * Check completeness of a Feature note.
- * Required: Purpose, Current Behavior, Requirements sections.
+ * Required: Purpose, Current Behavior, Constraints, Known Gaps, Requirements sections.
  * Requirements must have SHALL/MUST and at least one scenario.
  */
 export function checkFeatureCompleteness(feature: IndexRecord, _index: VaultIndex): VerifyIssue[] {
@@ -52,28 +51,65 @@ export function checkFeatureCompleteness(feature: IndexRecord, _index: VaultInde
     });
   }
 
-  // Each requirement must have SHALL/MUST and at least one scenario
-  for (const req of feature.requirements) {
-    if (!/\b(SHALL|MUST)\b/.test(req.normative)) {
+  // Duplicate requirement name check: the parser skips the second
+  // occurrence and records a parse error, but that error doesn't make
+  // it into the verify report on its own. Surface duplicates here so
+  // users see a clear completeness error instead of silently losing a
+  // requirement entry. Note: seen is built from parser output, which
+  // already deduped — so duplicates show up as "parser skipped N".
+  // We detect via raw headings instead: count `### Requirement: X`
+  // occurrences across the Feature's headings list.
+  const requirementHeadingCounts = new Map<string, number>();
+  for (const heading of feature.headings) {
+    const match = heading.match(/^Requirement:\s*(.+)$/i);
+    if (match) {
+      const name = match[1].trim();
+      requirementHeadingCounts.set(name, (requirementHeadingCounts.get(name) ?? 0) + 1);
+    }
+  }
+  for (const [name, count] of requirementHeadingCounts) {
+    if (count > 1) {
       issues.push({
         dimension: 'completeness',
         severity: 'error',
         code: 'MISSING_REQUIREMENTS',
+        message: `Requirement "${name}" in Feature "${feature.id}" appears ${count} times — each name must be unique within the Feature.`,
+        note_id: feature.id,
+        note_path: feature.path,
+        suggestion: `Rename the duplicate headings (e.g., "${name} (auth flow)", "${name} (legacy)") or merge them into one requirement.`,
+      });
+    }
+  }
+
+  // Each requirement must have SHALL/MUST and at least one scenario.
+  // Migrated notes (from OpenSpec) may not follow this convention — downgrade to warning.
+  const isMigrated = feature.tags?.includes('migrated') ?? false;
+  const reqSeverity = isMigrated ? 'warning' as const : 'error' as const;
+  for (const req of feature.requirements) {
+    if (!/\b(SHALL|MUST)\b/.test(req.normative)) {
+      issues.push({
+        dimension: 'completeness',
+        severity: reqSeverity,
+        code: 'MISSING_REQUIREMENTS',
         message: `Requirement "${req.name}" in Feature "${feature.id}" lacks SHALL or MUST keyword`,
         note_id: feature.id,
         note_path: feature.path,
-        suggestion: 'Normative statements must contain SHALL or MUST.',
+        suggestion: isMigrated
+          ? 'Migrated requirement — consider adding SHALL/MUST when updating this Feature.'
+          : 'Normative statements must contain SHALL or MUST.',
       });
     }
     if (req.scenarios.length === 0) {
       issues.push({
         dimension: 'completeness',
-        severity: 'error',
+        severity: reqSeverity,
         code: 'MISSING_REQUIREMENTS',
         message: `Requirement "${req.name}" in Feature "${feature.id}" has no scenario defined`,
         note_id: feature.id,
         note_path: feature.path,
-        suggestion: 'Add at least one "#### Scenario:" with WHEN/THEN format.',
+        suggestion: isMigrated
+          ? 'Migrated requirement — consider adding WHEN/THEN scenarios when updating.'
+          : 'Add at least one "#### Scenario:" with WHEN/THEN format.',
       });
     }
   }
@@ -104,16 +140,23 @@ export function checkChangeCompleteness(change: IndexRecord, _index: VaultIndex)
     }
   }
 
-  // Delta Summary check
+  // Delta Summary check. Migrated changes (OpenSpec's free-form
+  // "What Changes" doesn't map cleanly to canonical delta_summary) get
+  // a warning instead of an error so a fresh migration doesn't fail
+  // verify out of the gate. Authors still need to fill in canonical
+  // delta_summary before `ows apply` can run.
+  const isMigratedChange = change.tags?.includes('migrated') ?? false;
   if (change.delta_summary.length === 0) {
     issues.push({
       dimension: 'completeness',
-      severity: 'error',
+      severity: isMigratedChange ? 'warning' : 'error',
       code: 'MISSING_DELTA_SUMMARY',
       message: `Change "${change.id}" has no Delta Summary entries`,
       note_id: change.id,
       note_path: change.path,
-      suggestion: 'Add a Delta Summary with ADDED/MODIFIED/REMOVED/RENAMED operations.',
+      suggestion: isMigratedChange
+        ? 'Migrated from OpenSpec — fill in canonical Delta Summary (ADDED/MODIFIED/REMOVED/RENAMED) before applying.'
+        : 'Add a Delta Summary with ADDED/MODIFIED/REMOVED/RENAMED operations.',
     });
   }
 

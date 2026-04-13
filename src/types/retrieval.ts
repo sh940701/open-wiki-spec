@@ -35,4 +35,21 @@ export interface RetrievalResult {
   sequencing: SequencingSummary;
   candidates: ScoredCandidate[];
   warnings: string[];
+  /**
+   * Human-readable justification for the chosen classification/confidence
+   * pair. Especially important for `needs_confirmation` — without this
+   * field, agents (and users reading `--json`) have no way to tell WHY
+   * the engine asked for confirmation (top-two tie? sequencing conflict?
+   * under-specified query? index quality issues?). Always set by
+   * `classify()` so downstream consumers can trust its presence.
+   */
+  classification_reason?: string;
+  /**
+   * Whether semantic (embedding-based) search was available for this
+   * retrieval run. When false, results are lexical-only — lower recall
+   * for semantically-similar but lexically-different queries. JSON
+   * consumers (CI, agents) can use this to decide whether the
+   * classification is trustworthy enough to auto-act on.
+   */
+  semantic_used?: boolean;
 }
