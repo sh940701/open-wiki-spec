@@ -1,6 +1,6 @@
 {
   "name": "open-wiki-spec",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Obsidian-first wiki workflow engine for specification management",
   "type": "module",
   "bin": {

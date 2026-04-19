@@ -10,8 +10,12 @@ export const DEFAULT_MODEL = 'Xenova/multilingual-e5-small';
  * Update this hash when intentionally upgrading the model version.
  * For air-gapped environments, set CreateEmbedderOptions.localModelPath
  * to a local directory containing the model files instead.
+ *
+ * Verify any new hash points to a commit that actually exists in the model
+ * repo (the previous value did not) and contains all required files
+ * (tokenizer.json, config.json, quantized ONNX weights).
  */
-export const DEFAULT_MODEL_REVISION = 'bf4b30e4e5543f3949ad93f84e0b12c40feb1528';
+export const DEFAULT_MODEL_REVISION = '761b726dd34fb83930e26aab4e9ac3899aa1fa78';
 
 export type EmbedPipeline = (text: string) => Promise<number[]>;
 

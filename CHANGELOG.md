@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.1] - 2026-04-19
+
+### Fixed
+- **Embedding model downloads fail → silent lexical-only fallback.** `DEFAULT_MODEL_REVISION` in `src/core/embedding/embedder.ts` was pinned to a commit hash that does not exist in the `Xenova/multilingual-e5-small` repository, so `tokenizer.json` returned 404 on every fresh install and the embedder quietly degraded to lexical retrieval. Hash is now pinned to a valid commit (`761b726d...`, Transformers.js v3 quantized ONNX). Semantic search restored for users who have never cached the model. Existing embedding caches are automatically re-keyed on the new revision.
+
 ## [0.3.0] - 2026-04-13
 
 ### Added
