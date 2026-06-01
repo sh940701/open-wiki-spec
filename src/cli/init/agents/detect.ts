@@ -27,13 +27,33 @@ function hostSignals(): AgentId[] {
   return out;
 }
 
-const exists = (p: string): boolean => fs.existsSync(p);
+/** Directory marker: must resolve to a real directory (broken symlink/perm → false). */
+function isDir(p: string): boolean {
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/** File marker: must resolve to a real file. */
+function isFile(p: string): boolean {
+  try {
+    return fs.statSync(p).isFile();
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Decide which agent integration(s) to generate.
  *
  * - explicit `claude`/`codex`/`both` → deterministic, no scan (hermetic).
  * - `auto`/undefined → project markers first, then host signals, then `['claude']`.
+ *
+ * Directory markers (`.claude`, `.codex`, `.agents`) must be directories and file
+ * markers (`CLAUDE.md`, `AGENTS.md`) must be files, so a stray regular file named
+ * `.agents` does not mislead detection into a path the adapters can't write to.
  *
  * Always returns a de-duped, stable-ordered, non-empty list.
  */
@@ -44,13 +64,13 @@ export function detectAgents(projectPath: string, explicit?: AgentSelector, deps
 
   const found: AgentId[] = [];
   const claudeMarker =
-    exists(path.join(projectPath, '.claude')) ||
-    exists(path.join(projectPath, 'CLAUDE.md')) ||
-    exists(path.join(projectPath, 'claude.md'));
+    isDir(path.join(projectPath, '.claude')) ||
+    isFile(path.join(projectPath, 'CLAUDE.md')) ||
+    isFile(path.join(projectPath, 'claude.md'));
   const codexMarker =
-    exists(path.join(projectPath, '.codex')) ||
-    exists(path.join(projectPath, '.agents')) ||
-    exists(path.join(projectPath, 'AGENTS.md'));
+    isDir(path.join(projectPath, '.codex')) ||
+    isDir(path.join(projectPath, '.agents')) ||
+    isFile(path.join(projectPath, 'AGENTS.md'));
   if (claudeMarker) found.push('claude');
   if (codexMarker) found.push('codex');
   if (found.length) return found;

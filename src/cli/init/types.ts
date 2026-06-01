@@ -28,8 +28,8 @@ export interface InitResult {
   skillFilesGenerated: string[];
   /** Agents that integration files were generated for. */
   agents: AgentId[];
-  /** Files written per agent (keyed by AgentId). */
-  agentArtifacts: Record<string, string[]>;
+  /** Files written per agent. Only generated agents appear as keys (see `agents`). */
+  agentArtifacts: Partial<Record<AgentId, string[]>>;
   warnings: string[];
 }
 

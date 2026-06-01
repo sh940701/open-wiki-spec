@@ -44,4 +44,15 @@ describe('detectAgents', () => {
     fs.mkdirSync(path.join(dir, '.claude'));
     expect(detectAgents(dir, 'auto', { host: () => ['codex'] })).toEqual(['claude']);
   });
+
+  it('ignores a stray regular FILE named like a directory marker', () => {
+    // a plain file named ".agents" must NOT count as a codex marker
+    fs.writeFileSync(path.join(dir, '.agents'), 'not a dir');
+    expect(detectAgents(dir, 'auto', { host: () => [] })).toEqual(['claude']);
+  });
+
+  it('treats AGENTS.md (a file) as a codex marker', () => {
+    fs.writeFileSync(path.join(dir, 'AGENTS.md'), '# guidance');
+    expect(detectAgents(dir, 'auto', { host: () => [] })).toEqual(['codex']);
+  });
 });

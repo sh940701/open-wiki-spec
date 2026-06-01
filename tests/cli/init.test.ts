@@ -88,7 +88,7 @@ describe('initVault', () => {
     expect(result.metaFilesCreated.length).toBe(4);
     expect(result.warnings).toBeDefined();
     expect(result.agents).toEqual(['claude']);
-    expect(result.agentArtifacts.claude.length).toBe(12);
+    expect(result.agentArtifacts.claude!.length).toBe(12);
   });
 
   it('should create seed notes on fresh init', async () => {

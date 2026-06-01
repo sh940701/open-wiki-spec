@@ -54,24 +54,55 @@ Always \`--dry-run\` destructive or creative steps first. Never auto-resolve
 ${END}
 `;
 
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function countOccurrences(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1;
+}
+
 /**
- * Insert or replace the ows managed block in an `AGENTS.md` body. Pure.
+ * Insert or replace the ows managed block in an `AGENTS.md` body. Pure and
+ * convergent — any input yields a body with exactly one well-formed block.
  *
  * - empty existing → just the block
- * - existing with a block → replace ONLY the block, preserve everything else
- * - existing without a block → append the block after a blank line
+ * - exactly one well-formed block → replace it IN PLACE (surrounding order kept)
+ * - no markers → append the block after the existing content
+ * - malformed/duplicate markers (BEGIN-only, END-only, END-before-BEGIN, multiple
+ *   pairs) → strip every managed region and stray marker, then append one clean block
+ *
+ * Whitespace is normalized only at the join boundaries, never across the whole
+ * document, so user-authored blank-line runs elsewhere are preserved.
  */
 export function mergeAgentsMd(existing: string, block: string): string {
   const normBlock = block.trimEnd() + '\n';
   if (!existing.trim()) return normBlock;
 
+  const begins = countOccurrences(existing, BEGIN);
+  const ends = countOccurrences(existing, END);
   const b = existing.indexOf(BEGIN);
   const e = existing.indexOf(END);
-  if (b !== -1 && e !== -1 && e > b) {
-    const before = existing.slice(0, b);
-    const after = existing.slice(e + END.length);
-    return (before + normBlock.trimEnd() + after).replace(/\n{3,}/g, '\n\n');
+
+  // Exactly one well-formed pair → replace in place, preserving surrounding order.
+  if (begins === 1 && ends === 1 && b !== -1 && e > b) {
+    const before = existing.slice(0, b).replace(/\s+$/, '');
+    const after = existing.slice(e + END.length).replace(/^\s+/, '');
+    const parts = [before, normBlock.trimEnd(), after].filter((p) => p.length > 0);
+    return parts.join('\n\n').replace(/\s+$/, '') + '\n';
   }
-  // no block present: append after existing content + a blank line
-  return existing.replace(/\s*$/, '') + '\n\n' + normBlock;
+
+  // No markers at all → append after the existing content.
+  if (begins === 0 && ends === 0) {
+    return existing.replace(/\s+$/, '') + '\n\n' + normBlock;
+  }
+
+  // Malformed/duplicate markers → strip all managed regions + stray markers, append clean.
+  let base = existing.replace(new RegExp(escapeRe(BEGIN) + '[\\s\\S]*?' + escapeRe(END), 'g'), '');
+  base = base
+    .split('\n')
+    .filter((line) => !line.includes(BEGIN) && !line.includes(END))
+    .join('\n')
+    .replace(/\s+$/, '');
+  return base ? base + '\n\n' + normBlock : normBlock;
 }

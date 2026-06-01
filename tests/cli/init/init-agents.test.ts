@@ -33,8 +33,8 @@ describe('initVault agent selection', () => {
     expect(r.agents).toEqual(['claude', 'codex']);
     expect(exists(dir, '.claude/commands/ows-verify.md')).toBe(true);
     expect(exists(dir, '.agents/skills/ows-verify/SKILL.md')).toBe(true);
-    expect(r.agentArtifacts.claude.length).toBe(12);
-    expect(r.agentArtifacts.codex.length).toBeGreaterThanOrEqual(13); // 12 skills + AGENTS.md
+    expect(r.agentArtifacts.claude!.length).toBe(12);
+    expect(r.agentArtifacts.codex!.length).toBeGreaterThanOrEqual(13); // 12 skills + AGENTS.md
   });
 
   it('extend mode regenerates for the selected agent', async () => {

@@ -27,6 +27,30 @@ describe('mergeAgentsMd', () => {
     const twice = mergeAgentsMd(once, OWS_AGENTS_BLOCK);
     expect(twice).toBe(once);
   });
+
+  const countMarkers = (s: string, m: string) => s.split(m).length - 1;
+
+  it('converges to exactly one block from malformed marker states', () => {
+    const cases = [
+      `TOP\n${BEGIN}\nno end here\nBOTTOM\n`, // BEGIN only
+      `TOP\n${END}\nBOTTOM\n`, // END only
+      `TOP\n${END}\nstuff\n${BEGIN}\nBOTTOM\n`, // END before BEGIN
+      `${BEGIN}\nfirst\n${END}\nmid\n${BEGIN}\nsecond\n${END}\n`, // duplicate pairs
+    ];
+    for (const input of cases) {
+      const out = mergeAgentsMd(input, OWS_AGENTS_BLOCK);
+      expect(countMarkers(out, BEGIN), `BEGIN count for: ${JSON.stringify(input)}`).toBe(1);
+      expect(countMarkers(out, END), `END count for: ${JSON.stringify(input)}`).toBe(1);
+      // second merge is stable
+      expect(mergeAgentsMd(out, OWS_AGENTS_BLOCK)).toBe(out);
+    }
+  });
+
+  it('does not collapse user blank-line runs outside the managed block', () => {
+    const existing = `line A\n\n\n\nline B\n`; // 3 blank lines the user authored
+    const out = mergeAgentsMd(existing, OWS_AGENTS_BLOCK);
+    expect(out).toContain('line A\n\n\n\nline B');
+  });
 });
 
 describe('OWS_AGENTS_BLOCK content', () => {

@@ -11,7 +11,7 @@ export const ADAPTERS: Record<AgentId, AgentAdapter> = {
 
 export interface RunAdaptersResult {
   agents: AgentId[];
-  agentArtifacts: Record<string, string[]>;
+  agentArtifacts: Partial<Record<AgentId, string[]>>;
   allFiles: string[];
   warnings: string[];
 }
@@ -23,7 +23,7 @@ export function runAdapters(
   explicit?: AgentSelector,
 ): RunAdaptersResult {
   const agents = detectAgents(projectPath, explicit);
-  const agentArtifacts: Record<string, string[]> = {};
+  const agentArtifacts: Partial<Record<AgentId, string[]>> = {};
   const allFiles: string[] = [];
   const warnings: string[] = [];
   for (const id of agents) {
