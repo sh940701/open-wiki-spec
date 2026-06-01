@@ -77,4 +77,11 @@ describe('detectAgents', () => {
     // would be ['claude'] (project markers win). Correct behavior → host fallback ['codex'].
     expect(detectAgents(dir, 'auto', { host: () => ['codex'] })).toEqual(['codex']);
   });
+
+  it('ignores a stray FILE named .codex (must be a directory)', () => {
+    fs.writeFileSync(path.join(dir, '.codex'), 'not a dir');
+    // host returns only claude; if the stray file were wrongly a codex marker the result
+    // would be ['codex']. Correct behavior → host fallback ['claude'].
+    expect(detectAgents(dir, 'auto', { host: () => ['claude'] })).toEqual(['claude']);
+  });
 });

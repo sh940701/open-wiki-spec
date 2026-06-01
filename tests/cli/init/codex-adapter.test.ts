@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { CodexAdapter } from '../../../src/cli/init/agents/codex.js';
+import { CodexAdapter, invocationSection } from '../../../src/cli/init/agents/codex.js';
 import { WORKFLOW_DEFINITIONS } from '../../../src/cli/init/workflow-definitions.js';
 import { toCodex } from '../../../src/cli/init/agents/transform.js';
 
@@ -50,20 +50,19 @@ describe('CodexAdapter.render — skills', () => {
     }
   });
 
-  it('each skill is EXACTLY frontmatter + Invocation header + toCodex(body) (identity, no corruption)', () => {
-    // Kills false confidence: pins the HEAD exactly, the TAIL to exactly toCodex(body),
-    // and requires the body to appear exactly once — so a stub/duplicated/appended/corrupted
-    // transform all fail. `.toContain` (the previous assertion) would not have caught those.
+  it('each skill content is EXACTLY the expected template (full identity, no corruption)', () => {
+    // Full `.toBe` identity: frontmatter + invocation header + toCodex(body), byte-for-byte.
+    // A stub/duplicated/appended/corrupted transform, or any stray injected text anywhere,
+    // fails here. (Previous `.toContain` could not catch injection between head and body.)
     for (const d of WORKFLOW_DEFINITIONS) {
       const a = skills.find((s) => s.path === `.agents/skills/${d.name}/SKILL.md`)!;
-      const body = toCodex(d.body);
-      const head = `---\nname: ${d.name}\ndescription: ${toCodex(d.description)}\n---\n\n## Invocation\n\n`;
-      expect(a.contents.startsWith(head), `${d.name} head`).toBe(true);
-      expect(a.contents.endsWith(body + '\n'), `${d.name} body tail`).toBe(true);
-      expect(a.contents.split(body).length, `${d.name} body must occur exactly once`).toBe(2);
+      const expected =
+        `---\nname: ${d.name}\ndescription: ${toCodex(d.description)}\n---\n\n` +
+        `${invocationSection(d.name)}${toCodex(d.body)}\n`;
+      expect(a.contents, `${d.name} full identity`).toBe(expected);
       // the transform must actually have changed something for workflows with cross-refs
       if (/\/ows-/.test(d.body)) {
-        expect(body, `${d.name} transform is a no-op`).not.toBe(d.body);
+        expect(toCodex(d.body), `${d.name} transform is a no-op`).not.toBe(d.body);
       }
     }
   });

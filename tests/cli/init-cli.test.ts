@@ -77,10 +77,8 @@ describe('ows init — real subprocess (built bin)', () => {
   const bin = path.join(REPO_ROOT, 'bin', 'open-wiki-spec.js');
 
   beforeAll(() => {
-    // The bin runs the compiled dist; ensure it exists and is current.
-    if (!fs.existsSync(path.join(REPO_ROOT, 'dist', 'cli', 'index.js'))) {
-      execSync('npm run build', { cwd: REPO_ROOT, stdio: 'ignore' });
-    }
+    // The bin runs the compiled dist; always rebuild so a stale dist can't pass.
+    execSync('npm run build', { cwd: REPO_ROOT, stdio: 'ignore' });
   }, 120_000);
 
   it('`ows init --agent codex --json` exits 0 and emits a valid envelope on real stdout', () => {
@@ -104,6 +102,23 @@ describe('ows init — real subprocess (built bin)', () => {
     // the real filesystem effect happened too
     expect(fs.existsSync(path.join(dir, '.agents', 'skills', 'ows-propose', 'SKILL.md'))).toBe(true);
     expect(fs.existsSync(path.join(dir, 'AGENTS.md'))).toBe(true);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('`ows init --agent bogus` exits non-zero and writes nothing', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ows-subproc-bad-'));
+    let exitCode = 0;
+    let stderr = '';
+    try {
+      execFileSync(process.execPath, [bin, 'init', dir, '--agent', 'bogus'], { encoding: 'utf-8' });
+    } catch (e: any) {
+      exitCode = e.status ?? 1;
+      stderr = String(e.stderr ?? '');
+    }
+    expect(exitCode).not.toBe(0);
+    expect(stderr).toMatch(/claude, codex, both, auto/);
+    // the bad invocation did not scaffold a vault
+    expect(fs.existsSync(path.join(dir, 'wiki'))).toBe(false);
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });

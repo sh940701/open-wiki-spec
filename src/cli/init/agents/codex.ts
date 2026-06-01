@@ -5,14 +5,16 @@ import type { AgentAdapter, AgentArtifact } from './types.js';
 import { toCodex } from './transform.js';
 import { OWS_AGENTS_BLOCK, mergeAgentsMd, AGENTS_MAX_BYTES } from './agents-md.js';
 
-const INVOCATION = (name: string): string => {
+/** The `## Invocation` header prepended to every Codex skill body. Exported so tests
+ *  can assert each skill's full content by identity. */
+export function invocationSection(name: string): string {
   const mention = '`$' + name + '`'; // e.g. `$ows-propose`
   return (
     `## Invocation\n\nImplicitly selected when your task matches the description above, ` +
     `or invoke it explicitly: mention ${mention} inline, or pick \`${name}\` from \`/skills\`. ` +
     `This skill drives the \`ows\` CLI - run the commands below directly.\n\n`
   );
-};
+}
 
 /**
  * Renders ows workflows as OpenAI Codex skills under `.agents/skills/ows-<key>/`
@@ -24,7 +26,7 @@ export class CodexAdapter implements AgentAdapter {
   render(defs: WorkflowDefinition[]): AgentArtifact[] {
     const arts: AgentArtifact[] = defs.map((d) => ({
       path: `.agents/skills/${d.name}/SKILL.md`,
-      contents: `---\nname: ${d.name}\ndescription: ${toCodex(d.description)}\n---\n\n${INVOCATION(d.name)}${toCodex(d.body)}\n`,
+      contents: `---\nname: ${d.name}\ndescription: ${toCodex(d.description)}\n---\n\n${invocationSection(d.name)}${toCodex(d.body)}\n`,
     }));
     // AGENTS.md artifact carries ONLY the managed block; writeAll merges it.
     arts.push({ path: 'AGENTS.md', contents: OWS_AGENTS_BLOCK });
