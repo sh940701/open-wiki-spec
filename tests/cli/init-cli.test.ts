@@ -99,7 +99,9 @@ describe('ows init — real subprocess (built bin)', () => {
     expect(parsed.command).toBe('init');
     expect(parsed.data.agents).toContain('codex');
     expect(Array.isArray(parsed.data.agentArtifacts.codex)).toBe(true);
-    // the real filesystem effect happened too
+    // the real filesystem effect happened too — vault scaffolded AND codex artifacts written
+    expect(fs.existsSync(path.join(dir, 'wiki', '00-meta', 'schema.md'))).toBe(true);
+    expect(fs.existsSync(path.join(dir, 'wiki', '03-features'))).toBe(true);
     expect(fs.existsSync(path.join(dir, '.agents', 'skills', 'ows-propose', 'SKILL.md'))).toBe(true);
     expect(fs.existsSync(path.join(dir, 'AGENTS.md'))).toBe(true);
     fs.rmSync(dir, { recursive: true, force: true });
