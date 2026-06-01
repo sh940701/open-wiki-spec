@@ -3,8 +3,9 @@ import { handleCliError } from "./error-handler.js";
  * CLI handler for `ows init`.
  */
 import * as path from 'node:path';
-import type { Command } from 'commander';
+import { Option, type Command } from 'commander';
 import { initVault } from '../init/init-engine.js';
+import type { AgentSelector } from '../init/agents/types.js';
 import { jsonEnvelope } from '../json-envelope.js';
 
 export function registerInitCommand(program: Command): void {
@@ -13,10 +14,20 @@ export function registerInitCommand(program: Command): void {
     .description('Initialize a new open-wiki-spec vault')
     .option('--force', 'Force re-initialization, recreating meta files')
     .option('--skip-seed', 'Skip creating seed notes')
+    .addOption(
+      new Option('--agent <agent>', 'Agent integration to generate')
+        .choices(['claude', 'codex', 'both', 'auto'])
+        .default('auto'),
+    )
     .option('--json', 'Output result as JSON')
-    .action(async (targetPath: string | undefined, opts: { force?: boolean; skipSeed?: boolean; json?: boolean }) => {
+    .action(async (targetPath: string | undefined, opts: { force?: boolean; skipSeed?: boolean; json?: boolean; agent?: string }) => {
       try {
-        const result = await initVault({ path: targetPath, force: opts.force, skipSeed: opts.skipSeed });
+        const result = await initVault({
+          path: targetPath,
+          force: opts.force,
+          skipSeed: opts.skipSeed,
+          agent: opts.agent as AgentSelector,
+        });
         if (opts.json) {
           console.log(jsonEnvelope('init', result));
         } else {
@@ -28,7 +39,10 @@ export function registerInitCommand(program: Command): void {
           console.log(`  Directories: ${result.directoriesCreated.length} created`);
           console.log(`  Meta files: ${result.metaFilesCreated.length} created`);
           console.log(`  Seed notes: ${result.seedFilesCreated.length} created`);
-          console.log(`  Skill files: ${result.skillFilesGenerated.length} generated`);
+          console.log(`  Agents: ${result.agents.join(', ')}`);
+          for (const id of result.agents) {
+            console.log(`    ${id}: ${result.agentArtifacts[id]?.length ?? 0} files`);
+          }
           if (result.warnings.length > 0) {
             for (const w of result.warnings) console.log(`  Warning: ${w}`);
           }
