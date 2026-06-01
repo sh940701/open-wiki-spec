@@ -51,6 +51,28 @@ describe('mergeAgentsMd', () => {
     const out = mergeAgentsMd(existing, OWS_AGENTS_BLOCK);
     expect(out).toContain('line A\n\n\n\nline B');
   });
+
+  it('handles CRLF AGENTS.md without duplicate managed blocks', () => {
+    const crlfNoBlock = '# Rules\r\n\r\nUse tabs.\r\n';
+    const out1 = mergeAgentsMd(crlfNoBlock, OWS_AGENTS_BLOCK);
+    expect(countMarkers(out1, BEGIN)).toBe(1);
+    expect(countMarkers(out1, END)).toBe(1);
+    expect(out1).toContain('Use tabs.');
+
+    // Use a collision-free sentinel (the managed block itself legitimately mentions "stale_base").
+    const crlfWithBlock = `TOP\r\n${BEGIN}\r\nOLD_MANAGED_BODY_ZZZ\r\n${END}\r\nBOTTOM\r\n`;
+    const out2 = mergeAgentsMd(crlfWithBlock, OWS_AGENTS_BLOCK);
+    expect(countMarkers(out2, BEGIN)).toBe(1);
+    expect(countMarkers(out2, END)).toBe(1);
+    expect(out2).toContain('TOP');
+    expect(out2).toContain('BOTTOM');
+    expect(out2).not.toContain('OLD_MANAGED_BODY_ZZZ');
+  });
+
+  it('is a no-op when the managed block is already up to date', () => {
+    const once = mergeAgentsMd('TOP\n', OWS_AGENTS_BLOCK);
+    expect(mergeAgentsMd(once, OWS_AGENTS_BLOCK)).toBe(once);
+  });
 });
 
 describe('OWS_AGENTS_BLOCK content', () => {

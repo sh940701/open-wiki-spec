@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { CodexAdapter } from '../../../src/cli/init/agents/codex.js';
 import { WORKFLOW_DEFINITIONS } from '../../../src/cli/init/workflow-definitions.js';
+import { toCodex } from '../../../src/cli/init/agents/transform.js';
 
 describe('CodexAdapter.render — skills', () => {
   const arts = new CodexAdapter().render(WORKFLOW_DEFINITIONS);
@@ -30,12 +31,35 @@ describe('CodexAdapter.render — skills', () => {
     expect(propose.contents).toContain('$ows-propose');
   });
 
-  it('ANTI-LEAK: no Codex skill contains /ows-, "Claude", "subagent", or $ARGUMENTS', () => {
+  it('ANTI-LEAK: no Codex skill leaks Claude-isms (case-insensitive, all 12 skills)', () => {
     for (const a of skills) {
-      expect(a.contents, a.path).not.toMatch(/\/ows-/);
-      expect(a.contents, a.path).not.toMatch(/Claude/);
-      expect(a.contents, a.path).not.toMatch(/subagent/);
-      expect(a.contents, a.path).not.toMatch(/\$ARGUMENTS/);
+      expect(a.contents, `${a.path}: /ows- slash ref`).not.toMatch(/\/ows-/);
+      expect(a.contents, `${a.path}: claude`).not.toMatch(/\bclaude\b/i);
+      expect(a.contents, `${a.path}: subagent`).not.toMatch(/\bsubagent\b/i);
+      expect(a.contents, `${a.path}: slash command`).not.toMatch(/slash command/i);
+      expect(a.contents, `${a.path}: Task tool`).not.toMatch(/\bTask tool\b/i);
+      expect(a.contents, `${a.path}: $ARGUMENTS`).not.toMatch(/\$ARGUMENTS/);
+    }
+  });
+
+  it('uses the intentional Codex invocation surface ($ows-<name> + /skills) in every skill', () => {
+    for (const a of skills) {
+      const name = a.path.split('/')[2];
+      expect(a.contents, `${a.path}: $${name}`).toContain(`$${name}`);
+      expect(a.contents, `${a.path}: /skills picker`).toContain('/skills'); // Codex picker, not a Claude leak
+    }
+  });
+
+  it('each skill body is EXACTLY toCodex(workflow.body) + description is toCodex(description)', () => {
+    // Kills false confidence: a stub toCodex that returned a placeholder would fail here.
+    for (const d of WORKFLOW_DEFINITIONS) {
+      const a = skills.find((s) => s.path === `.agents/skills/${d.name}/SKILL.md`)!;
+      expect(a.contents, `${d.name} body`).toContain(toCodex(d.body));
+      expect(a.contents, `${d.name} description`).toContain(`description: ${toCodex(d.description)}\n`);
+      // and the transform must actually have changed something for workflows with cross-refs
+      if (/\/ows-/.test(d.body)) {
+        expect(toCodex(d.body), `${d.name} transform is a no-op`).not.toBe(d.body);
+      }
     }
   });
 

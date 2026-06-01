@@ -1,4 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { createProgram } from '../../src/cli/index.js';
 
 function initCommand() {
@@ -39,5 +42,29 @@ describe('ows init --agent option', () => {
     for (const v of ['claude', 'codex', 'both', 'auto']) {
       expect(opt.argChoices).toContain(v);
     }
+  });
+
+  it('--json output envelope includes agents and agentArtifacts', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ows-initjson-'));
+    const program = createProgram();
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => {
+      logs.push(a.map(String).join(' '));
+    });
+    try {
+      await program.parseAsync(['node', 'ows', 'init', dir, '--agent', 'codex', '--json']);
+    } finally {
+      spy.mockRestore();
+    }
+    const jsonLine = logs.find((l) => l.trim().startsWith('{'));
+    expect(jsonLine, 'no JSON envelope on stdout').toBeTruthy();
+    const parsed = JSON.parse(jsonLine!);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.command).toBe('init');
+    expect(Array.isArray(parsed.data.agents)).toBe(true);
+    expect(parsed.data.agents).toContain('codex');
+    expect(Array.isArray(parsed.data.agentArtifacts.codex)).toBe(true);
+    expect(parsed.data.agentArtifacts.codex.length).toBeGreaterThanOrEqual(13);
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });
