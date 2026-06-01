@@ -126,4 +126,17 @@ describe('initVault', () => {
     expect(result.seedFilesCreated).toHaveLength(0);
     expect(fs.existsSync(path.join(tempDir, 'wiki', '01-sources', 'seed-context.md'))).toBe(false);
   });
+
+  it('extend mode recreates an individually deleted meta file', async () => {
+    await initVault({ path: tempDir, agent: 'claude' });
+    const schemaPath = path.join(tempDir, 'wiki', '00-meta', 'schema.md');
+    fs.rmSync(schemaPath);
+    expect(fs.existsSync(schemaPath)).toBe(false);
+    const result = await initVault({ path: tempDir, agent: 'claude' });
+    expect(result.mode).toBe('extend');
+    expect(fs.existsSync(schemaPath)).toBe(true);
+    expect(result.metaFilesCreated).toContain('wiki/00-meta/schema.md');
+    // untouched meta files are NOT re-listed as created
+    expect(result.metaFilesCreated).not.toContain('wiki/00-meta/log.md');
+  });
 });

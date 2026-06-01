@@ -55,4 +55,26 @@ describe('detectAgents', () => {
     fs.writeFileSync(path.join(dir, 'AGENTS.md'), '# guidance');
     expect(detectAgents(dir, 'auto', { host: () => [] })).toEqual(['codex']);
   });
+
+  it('detects claude from CLAUDE.md (file marker)', () => {
+    fs.writeFileSync(path.join(dir, 'CLAUDE.md'), '# rules');
+    expect(detectAgents(dir, 'auto', { host: () => [] })).toEqual(['claude']);
+  });
+
+  it('detects claude from lowercase claude.md (file marker)', () => {
+    fs.writeFileSync(path.join(dir, 'claude.md'), '# rules');
+    expect(detectAgents(dir, 'auto', { host: () => [] })).toEqual(['claude']);
+  });
+
+  it('detects codex from .codex/ (directory marker)', () => {
+    fs.mkdirSync(path.join(dir, '.codex'));
+    expect(detectAgents(dir, 'auto', { host: () => [] })).toEqual(['codex']);
+  });
+
+  it('ignores a stray FILE named .claude (must be a directory)', () => {
+    fs.writeFileSync(path.join(dir, '.claude'), 'not a dir');
+    // host returns only codex; if the stray file were wrongly a claude marker the result
+    // would be ['claude'] (project markers win). Correct behavior → host fallback ['codex'].
+    expect(detectAgents(dir, 'auto', { host: () => ['codex'] })).toEqual(['codex']);
+  });
 });

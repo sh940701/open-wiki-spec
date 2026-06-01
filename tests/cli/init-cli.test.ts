@@ -1,8 +1,12 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { execFileSync, execSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { createProgram } from '../../src/cli/index.js';
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 function initCommand() {
   const program = createProgram();
@@ -65,6 +69,41 @@ describe('ows init --agent option', () => {
     expect(parsed.data.agents).toContain('codex');
     expect(Array.isArray(parsed.data.agentArtifacts.codex)).toBe(true);
     expect(parsed.data.agentArtifacts.codex.length).toBeGreaterThanOrEqual(13);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('ows init — real subprocess (built bin)', () => {
+  const bin = path.join(REPO_ROOT, 'bin', 'open-wiki-spec.js');
+
+  beforeAll(() => {
+    // The bin runs the compiled dist; ensure it exists and is current.
+    if (!fs.existsSync(path.join(REPO_ROOT, 'dist', 'cli', 'index.js'))) {
+      execSync('npm run build', { cwd: REPO_ROOT, stdio: 'ignore' });
+    }
+  }, 120_000);
+
+  it('`ows init --agent codex --json` exits 0 and emits a valid envelope on real stdout', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ows-subproc-'));
+    let stdout = '';
+    let exitCode = 0;
+    try {
+      stdout = execFileSync(process.execPath, [bin, 'init', dir, '--agent', 'codex', '--json'], {
+        encoding: 'utf-8',
+      });
+    } catch (e: any) {
+      exitCode = e.status ?? 1;
+      stdout = e.stdout ?? '';
+    }
+    expect(exitCode, `stderr/stdout: ${stdout}`).toBe(0);
+    const parsed = JSON.parse(stdout.trim());
+    expect(parsed.ok).toBe(true);
+    expect(parsed.command).toBe('init');
+    expect(parsed.data.agents).toContain('codex');
+    expect(Array.isArray(parsed.data.agentArtifacts.codex)).toBe(true);
+    // the real filesystem effect happened too
+    expect(fs.existsSync(path.join(dir, '.agents', 'skills', 'ows-propose', 'SKILL.md'))).toBe(true);
+    expect(fs.existsSync(path.join(dir, 'AGENTS.md'))).toBe(true);
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });

@@ -50,17 +50,31 @@ describe('CodexAdapter.render — skills', () => {
     }
   });
 
-  it('each skill body is EXACTLY toCodex(workflow.body) + description is toCodex(description)', () => {
-    // Kills false confidence: a stub toCodex that returned a placeholder would fail here.
+  it('each skill is EXACTLY frontmatter + Invocation header + toCodex(body) (identity, no corruption)', () => {
+    // Kills false confidence: pins the HEAD exactly, the TAIL to exactly toCodex(body),
+    // and requires the body to appear exactly once — so a stub/duplicated/appended/corrupted
+    // transform all fail. `.toContain` (the previous assertion) would not have caught those.
     for (const d of WORKFLOW_DEFINITIONS) {
       const a = skills.find((s) => s.path === `.agents/skills/${d.name}/SKILL.md`)!;
-      expect(a.contents, `${d.name} body`).toContain(toCodex(d.body));
-      expect(a.contents, `${d.name} description`).toContain(`description: ${toCodex(d.description)}\n`);
-      // and the transform must actually have changed something for workflows with cross-refs
+      const body = toCodex(d.body);
+      const head = `---\nname: ${d.name}\ndescription: ${toCodex(d.description)}\n---\n\n## Invocation\n\n`;
+      expect(a.contents.startsWith(head), `${d.name} head`).toBe(true);
+      expect(a.contents.endsWith(body + '\n'), `${d.name} body tail`).toBe(true);
+      expect(a.contents.split(body).length, `${d.name} body must occur exactly once`).toBe(2);
+      // the transform must actually have changed something for workflows with cross-refs
       if (/\/ows-/.test(d.body)) {
-        expect(toCodex(d.body), `${d.name} transform is a no-op`).not.toBe(d.body);
+        expect(body, `${d.name} transform is a no-op`).not.toBe(d.body);
       }
     }
+  });
+
+  it('full Codex skill set hashes to a pinned golden (regression guard for all 12 skills)', async () => {
+    const { createHash } = await import('node:crypto');
+    const sorted = [...skills].sort((a, b) => a.path.localeCompare(b.path));
+    const h = createHash('sha256');
+    for (const a of sorted) h.update(Buffer.from(a.contents, 'utf8'));
+    // Pinned set-SHA; intentional Codex wording changes must update this on purpose.
+    expect(h.digest('hex')).toBe('d86699fdfd3df8e089f11e77a79a404ab37c5573a92d619000178aefb7b90a0a');
   });
 
   it('skill names satisfy Codex charset (lowercase/digits/hyphen, <64)', () => {
