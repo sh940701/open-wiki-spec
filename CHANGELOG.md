@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-06-01
+
+### Added
+- **Codex compatibility.** `ows init` now generates OpenAI Codex integration alongside
+  Claude Code: `.agents/skills/ows-*/SKILL.md` skills (one per workflow) plus an
+  idempotent, clearly-marked `AGENTS.md` managed block. The Codex skills shell out to
+  the same `ows` CLI and carry no Claude-specific syntax (`$ows-*` invocation, no
+  `/ows-*` slash refs).
+- **`ows init --agent claude|codex|both|auto`** selector (default `auto`). Auto-detect
+  uses project markers (`.claude/`, `CLAUDE.md` → Claude; `.codex/`, `.agents/`,
+  `AGENTS.md` → Codex), then host signals, then falls back to Claude. Fully
+  backward-compatible: Claude-only projects produce byte-identical output to 0.3.x.
+
+### Changed
+- Refactored the init delivery layer into an agent-neutral adapter architecture
+  (`WORKFLOW_DEFINITIONS` is the single source of truth; `ClaudeAdapter` /
+  `CodexAdapter` render it). Claude command output is unchanged (verified
+  byte-for-byte). `InitResult` gains `agents` and `agentArtifacts`.
+
+### Safeguards
+- `ows init` warns when `AGENTS.override.md` shadows the generated `AGENTS.md`, and
+  when the merged `AGENTS.md` would exceed Codex's ~32 KiB `project_doc_max_bytes`.
+
 ## [0.3.1] - 2026-04-19
 
 ### Fixed

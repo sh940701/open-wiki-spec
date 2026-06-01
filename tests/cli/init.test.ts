@@ -53,7 +53,7 @@ describe('initVault', () => {
   });
 
   it('should generate Claude Code skill files', async () => {
-    const result = await initVault({ path: tempDir });
+    const result = await initVault({ path: tempDir, agent: 'claude' });
     expect(result.skillFilesGenerated.length).toBeGreaterThan(0);
     const claudeDir = path.join(tempDir, '.claude', 'commands');
     expect(fs.existsSync(claudeDir)).toBe(true);
@@ -82,11 +82,13 @@ describe('initVault', () => {
   });
 
   it('should return correct InitResult structure', async () => {
-    const result = await initVault({ path: tempDir });
+    const result = await initVault({ path: tempDir, agent: 'claude' });
     expect(result.wikiPath).toBe(path.join(tempDir, 'wiki'));
     expect(result.directoriesCreated.length).toBeGreaterThan(0);
     expect(result.metaFilesCreated.length).toBe(4);
     expect(result.warnings).toBeDefined();
+    expect(result.agents).toEqual(['claude']);
+    expect(result.agentArtifacts.claude!.length).toBe(12);
   });
 
   it('should create seed notes on fresh init', async () => {
@@ -123,5 +125,29 @@ describe('initVault', () => {
     const result = await initVault({ path: tempDir, skipSeed: true });
     expect(result.seedFilesCreated).toHaveLength(0);
     expect(fs.existsSync(path.join(tempDir, 'wiki', '01-sources', 'seed-context.md'))).toBe(false);
+  });
+
+  it('force re-init preserves user-authored conventions.md but regenerates schema.md', async () => {
+    await initVault({ path: tempDir, agent: 'claude' });
+    const convPath = path.join(tempDir, 'wiki', '00-meta', 'conventions.md');
+    fs.writeFileSync(convPath, 'MY TEAM RULES');
+    await initVault({ path: tempDir, force: true, agent: 'claude' });
+    // conventions.md is user-authored — force must NOT blow it away
+    expect(fs.readFileSync(convPath, 'utf-8')).toBe('MY TEAM RULES');
+    // schema.md is regenerable scaffolding — force DOES recreate it
+    expect(fs.readFileSync(path.join(tempDir, 'wiki', '00-meta', 'schema.md'), 'utf-8')).toContain('schema_version:');
+  });
+
+  it('extend mode recreates an individually deleted meta file', async () => {
+    await initVault({ path: tempDir, agent: 'claude' });
+    const schemaPath = path.join(tempDir, 'wiki', '00-meta', 'schema.md');
+    fs.rmSync(schemaPath);
+    expect(fs.existsSync(schemaPath)).toBe(false);
+    const result = await initVault({ path: tempDir, agent: 'claude' });
+    expect(result.mode).toBe('extend');
+    expect(fs.existsSync(schemaPath)).toBe(true);
+    expect(result.metaFilesCreated).toContain('wiki/00-meta/schema.md');
+    // untouched meta files are NOT re-listed as created
+    expect(result.metaFilesCreated).not.toContain('wiki/00-meta/log.md');
   });
 });

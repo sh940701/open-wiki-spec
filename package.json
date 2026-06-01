@@ -1,6 +1,6 @@
 {
   "name": "open-wiki-spec",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Obsidian-first wiki workflow engine for specification management",
   "type": "module",
   "bin": {
@@ -48,6 +48,7 @@
     "llm",
     "agent",
     "claude",
+    "codex",
     "cli"
   ],
   "author": "sh940701",

@@ -513,6 +513,17 @@ In short:
 
 > v1 should not be "a universal tool that works everywhere." It should be "the first operating version that works well in Claude Code."
 
+> **Addendum (v0.4.0): Codex support.** The Claude-Code-only scope above was a
+> deliberate v1 hardening decision, not a permanent constraint. As of v0.4.0 the init
+> layer is an agent-neutral adapter architecture (`WORKFLOW_DEFINITIONS` rendered by
+> pluggable `ClaudeAdapter` / `CodexAdapter`), and Codex is a first-class target:
+> `ows init --agent codex|both` generates Codex skills (`.agents/skills/ows-*/SKILL.md`)
+> plus an idempotent `AGENTS.md` managed block. Crucially, the "main agent delegates
+> retrieval to a subagent" model is satisfied by the `ows` CLI itself — `ows propose
+> --dry-run --json` *is* the deterministic retrieval engine — so the retrieval/workflow
+> contract is unchanged across runtimes; only the delivery layer is per-agent. Cursor
+> and Gemini CLI adapters remain future work, now cheap to add.
+
 ## 10. Retrieval / Index Contract
 
 This section defines what the `retrieval subagent` reads, what format it returns, and what rules it uses to finish classification. v1 implementation should begin from this contract.
