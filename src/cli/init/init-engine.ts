@@ -4,8 +4,10 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { InitOptions, InitResult } from './types.js';
+import type { AgentSelector } from './agents/types.js';
 import { createSchemaFile, createIndexFile, createLogFile, createConventionsFile } from './meta-files.js';
-import { writeAllSkillFiles } from './skill-generator.js';
+import { runAdapters } from './agents/index.js';
+import { WORKFLOW_DEFINITIONS } from './workflow-definitions.js';
 
 const SEED_SOURCE_CONTENT = `---
 type: source
@@ -65,7 +67,7 @@ export async function initVault(options: InitOptions): Promise<InitResult> {
   const isExtend = fs.existsSync(wikiPath);
 
   if (isExtend && !options.force) {
-    return extendVault(wikiPath, projectPath, options.skipSeed);
+    return extendVault(wikiPath, projectPath, options.skipSeed, options.agent);
   }
 
   // Fresh init or force re-init
@@ -109,8 +111,8 @@ export async function initVault(options: InitOptions): Promise<InitResult> {
     seedFilesCreated.push(...createSeedNotes(wikiPath));
   }
 
-  // Generate skill files
-  const skillFilesGenerated = writeAllSkillFiles(projectPath);
+  // Generate agent integration files (Claude commands and/or Codex skills).
+  const run = runAdapters(projectPath, WORKFLOW_DEFINITIONS, options.agent);
 
   return {
     mode: 'fresh',
@@ -118,15 +120,17 @@ export async function initVault(options: InitOptions): Promise<InitResult> {
     directoriesCreated,
     metaFilesCreated,
     seedFilesCreated,
-    skillFilesGenerated,
-    warnings: [],
+    skillFilesGenerated: run.allFiles,
+    agents: run.agents,
+    agentArtifacts: run.agentArtifacts,
+    warnings: run.warnings,
   };
 }
 
 /**
  * Extend an existing vault: add missing directories, regenerate skills.
  */
-function extendVault(wikiPath: string, projectPath: string, skipSeed?: boolean): InitResult {
+function extendVault(wikiPath: string, projectPath: string, skipSeed?: boolean, agent?: AgentSelector): InitResult {
   const directoriesCreated: string[] = [];
   const warnings: string[] = [];
 
@@ -170,8 +174,9 @@ function extendVault(wikiPath: string, projectPath: string, skipSeed?: boolean):
     seedFilesCreated.push(...createSeedNotes(wikiPath, true));
   }
 
-  // Regenerate skill files (always, in case CLI version changed)
-  const skillFilesGenerated = writeAllSkillFiles(projectPath);
+  // Regenerate agent integration files (always, in case CLI version changed)
+  const run = runAdapters(projectPath, WORKFLOW_DEFINITIONS, agent);
+  warnings.push(...run.warnings);
 
   return {
     mode: 'extend',
@@ -179,7 +184,9 @@ function extendVault(wikiPath: string, projectPath: string, skipSeed?: boolean):
     directoriesCreated,
     metaFilesCreated,
     seedFilesCreated,
-    skillFilesGenerated,
+    skillFilesGenerated: run.allFiles,
+    agents: run.agents,
+    agentArtifacts: run.agentArtifacts,
     warnings,
   };
 }

@@ -53,7 +53,7 @@ describe('initVault', () => {
   });
 
   it('should generate Claude Code skill files', async () => {
-    const result = await initVault({ path: tempDir });
+    const result = await initVault({ path: tempDir, agent: 'claude' });
     expect(result.skillFilesGenerated.length).toBeGreaterThan(0);
     const claudeDir = path.join(tempDir, '.claude', 'commands');
     expect(fs.existsSync(claudeDir)).toBe(true);
@@ -82,11 +82,13 @@ describe('initVault', () => {
   });
 
   it('should return correct InitResult structure', async () => {
-    const result = await initVault({ path: tempDir });
+    const result = await initVault({ path: tempDir, agent: 'claude' });
     expect(result.wikiPath).toBe(path.join(tempDir, 'wiki'));
     expect(result.directoriesCreated.length).toBeGreaterThan(0);
     expect(result.metaFilesCreated.length).toBe(4);
     expect(result.warnings).toBeDefined();
+    expect(result.agents).toEqual(['claude']);
+    expect(result.agentArtifacts.claude.length).toBe(12);
   });
 
   it('should create seed notes on fresh init', async () => {
