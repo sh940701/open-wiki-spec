@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.1] - 2026-10-21
+
+### Fixed
+- **`ows verify` reported `STALE_BASE` for already-applied and archived Changes.** `checkStaleBase` compared every Change's pre-apply `base_fingerprint` with the requirement's live `content_hash`, including `status: applied` and notes under `wiki/99-archive/`. A successful `MODIFIED` (and any later Change that edits the same requirement) makes those hashes differ on purpose. Stale-base detection now runs only for active Changes, which is when a mismatch means another Change landed first and apply should stop. Post-apply checks (`MODIFIED_NO_CHANGE`, the operation-validation matrix) are unchanged. Active Changes with a real mismatch still fail verify.
+
 ## [0.4.0] - 2026-06-01
 
 ### Added

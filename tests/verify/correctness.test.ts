@@ -315,6 +315,63 @@ describe('correctness', () => {
       expect(issues).toHaveLength(1);
       expect(issues[0].severity).toBe('warning');
     });
+
+    it('should not flag an applied change whose base is the pre-apply hash', () => {
+      const feat = createFeature('feat-1', {
+        requirements: [{ name: 'R1', key: 'feat-1::R1', normative: 'SHALL Y', scenarios: [{ name: 'S1', raw_text: 'WHEN Y THEN Z' }], content_hash: 'sha256:post-apply' }],
+      });
+      const change = createChange('chg-1', {
+        status: 'applied',
+        feature: 'feat-1',
+        tasks: [{ text: 'Edit R1', done: true }],
+        delta_summary: [
+          { op: 'MODIFIED', target_type: 'requirement', target_name: 'R1', target_note_id: 'feat-1', base_fingerprint: 'sha256:pre-apply' },
+        ],
+      });
+      const index = createIndex([feat, change]);
+      expect(checkStaleBase(change, index)).toEqual([]);
+    });
+
+    it('should not flag REMOVED or RENAMED entries on an applied change when the old name still exists with a new hash', () => {
+      const feat = createFeature('feat-1', {
+        requirements: [{ name: 'R1', key: 'feat-1::R1', normative: 'SHALL Y', scenarios: [{ name: 'S1', raw_text: 'WHEN Y THEN Z' }], content_hash: 'sha256:later' }],
+      });
+      for (const op of ['REMOVED', 'RENAMED'] as const) {
+        const change = createChange(`chg-${op}`, {
+          status: 'applied',
+          feature: 'feat-1',
+          tasks: [{ text: 'Edit R1', done: true }],
+          delta_summary: [
+            {
+              op,
+              target_type: 'requirement',
+              target_name: 'R1',
+              new_name: op === 'RENAMED' ? 'R2' : undefined,
+              target_note_id: 'feat-1',
+              base_fingerprint: 'sha256:pre-apply',
+            },
+          ],
+        });
+        const index = createIndex([feat, change]);
+        expect(checkStaleBase(change, index)).toEqual([]);
+      }
+    });
+
+    it('should not flag a change filed under 99-archive even if its status was not updated', () => {
+      const feat = createFeature('feat-1', {
+        requirements: [{ name: 'R1', key: 'feat-1::R1', normative: 'SHALL Y', scenarios: [{ name: 'S1', raw_text: 'WHEN Y THEN Z' }], content_hash: 'sha256:post-apply' }],
+      });
+      const change = createChange('chg-1', {
+        status: 'in_progress',
+        path: 'wiki/99-archive/chg-1.md',
+        feature: 'feat-1',
+        delta_summary: [
+          { op: 'MODIFIED', target_type: 'requirement', target_name: 'R1', target_note_id: 'feat-1', base_fingerprint: 'sha256:pre-apply' },
+        ],
+      });
+      const index = createIndex([feat, change]);
+      expect(checkStaleBase(change, index)).toEqual([]);
+    });
   });
 
   describe('checkStatusTransition', () => {
