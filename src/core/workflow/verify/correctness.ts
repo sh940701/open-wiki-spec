@@ -182,9 +182,26 @@ export function runOperationValidationMatrix(change: IndexRecord, index: VaultIn
 
 /**
  * Check for stale base_fingerprint values in Delta Summary entries.
- * A stale base means another Change was applied since this Delta Summary was written.
+ *
+ * A stale base means another Change was applied since this Delta Summary
+ * was written, so applying this Change would overwrite that work. The
+ * comparison is a pre-apply guard for active Changes only (overview.md
+ * §10.8: "stale base_fingerprint in active Change").
+ *
+ * Applied Changes keep the pre-apply fingerprint on purpose. Their own
+ * apply rewrites the requirement, so the live content_hash is expected to
+ * differ — the operation-validation matrix reports MODIFIED_NO_CHANGE when
+ * it does not. Comparing the fingerprint here turns every successful
+ * MODIFIED into a permanent STALE_BASE error, including after the note
+ * moves to wiki/99-archive/ and after a later Change edits the same
+ * requirement. Archived notes are historical records even if status was
+ * left behind, so they are skipped too.
  */
 export function checkStaleBase(change: IndexRecord, index: VaultIndex): VerifyIssue[] {
+  if (change.status === 'applied' || change.path.startsWith('wiki/99-archive/')) {
+    return [];
+  }
+
   const issues: VerifyIssue[] = [];
 
   for (const entry of change.delta_summary) {
