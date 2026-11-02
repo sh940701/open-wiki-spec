@@ -13,8 +13,6 @@ Run the open-wiki-spec propose workflow.
 
    Ask the user to describe what they want to build or change in the codebase.
 
-   **IMPORTANT**: Do NOT proceed without understanding what the user wants.
-
 2. **If input is long natural language, refine it first**
 
    Extract the core from the user's input:

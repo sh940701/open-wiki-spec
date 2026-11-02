@@ -16,8 +16,6 @@ Continue working on an existing Change by filling sections or advancing status.
    - **If 2+ active changes**: return an error with the list of active changes. Show them and let the user pick, then re-run with the chosen ID.
    - **If 0 active changes**: return an error. Suggest `/ows-propose` to create one.
 
-   **IMPORTANT**: When the CLI returns multiple active changes, NEVER auto-select. Always ask the user.
-
 2. **Check current status**
    ```bash
    ows status <changeId> --json

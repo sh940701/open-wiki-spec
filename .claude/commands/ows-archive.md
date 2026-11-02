@@ -19,7 +19,7 @@ Archive a completed Change, moving it from the active changes directory to 99-ar
 
    Run `ows list --json` to get changes. Show only changes with status `applied`.
 
-   **IMPORTANT**: Do NOT guess or auto-select. Always let the user choose.
+   Let the user choose; don't auto-select.
 
 2. **Verify before archiving**
 

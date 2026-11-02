@@ -73,7 +73,7 @@ describe('CodexAdapter.render — skills', () => {
     const h = createHash('sha256');
     for (const a of sorted) h.update(Buffer.from(a.contents, 'utf8'));
     // Pinned set-SHA; intentional Codex wording changes must update this on purpose.
-    expect(h.digest('hex')).toBe('d86699fdfd3df8e089f11e77a79a404ab37c5573a92d619000178aefb7b90a0a');
+    expect(h.digest('hex')).toBe('079ea98d94b4261066173ae4854cbfd2e613f06ad5960f9227a8993d9769e609');
   });
 
   it('skill names satisfy Codex charset (lowercase/digits/hyphen, <64)', () => {

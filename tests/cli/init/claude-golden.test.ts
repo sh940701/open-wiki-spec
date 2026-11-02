@@ -7,10 +7,11 @@ import { WORKFLOW_DEFINITIONS } from '../../../src/cli/init/workflow-definitions
 // The 12 workflow keys in canonical order.
 const KEYS = ['propose', 'continue', 'apply', 'verify', 'query', 'status', 'retrieve', 'archive', 'init', 'explore', 'onboard', 'migrate'];
 
-// Baseline set-SHA captured from open-wiki-spec 0.3.1 (pre-refactor) by concatenating
+// Baseline set-SHA (re-pinned 2026-11-02 after the prompt-audit wording changes in
+// workflow-definitions.ts; originally captured from 0.3.1) by concatenating
 // the sorted `.claude/commands/ows-*.md` files. This is the REAL byte-identity gate:
 // any change to a Claude command body, frontmatter, or ordering flips this hash.
-const CLAUDE_BASELINE_SHA = '0630d58272d5f672a806b170e215ccbf52d5f39339ac7b6081ed0ce92ee1a7bd';
+const CLAUDE_BASELINE_SHA = 'f074fa93ba93332fd19383cc13b737936c8648708b761f55787d993c4864ec07';
 
 describe('Claude byte-identity (golden)', () => {
   it('concatenated sorted Claude command set hashes to the 0.3.x baseline', () => {

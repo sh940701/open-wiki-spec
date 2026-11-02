@@ -15,6 +15,8 @@ Apply a completed Change to canonical Feature notes, updating the wiki's current
 - `--json`: Output structured JSON result
 - `--dry-run`: Validate without writing any files (use this to preview)
 - `--force-stale`: Apply even when stale base fingerprints are detected
+- `--no-auto-transition`: Keep status as `in_progress` after writing (use when ADDED/MODIFIED markers need manual content before finalizing)
+- `--no-log`: Skip appending to `wiki/00-meta/log.md`
 
 **Steps**
 
@@ -22,7 +24,7 @@ Apply a completed Change to canonical Feature notes, updating the wiki's current
 
    Run `ows list --json` to get applicable changes. Show only changes with status `in_progress`.
 
-   **IMPORTANT**: Do NOT guess or auto-select. Always let the user choose.
+   Let the user choose; don't auto-select.
 
 2. **Preview with dry-run first**
    ```bash
@@ -46,6 +48,15 @@ Apply a completed Change to canonical Feature notes, updating the wiki's current
    ---
 
 4. **Execute the apply (if confirmed)**
+
+   If the Change has ADDED or MODIFIED operations, use `--no-auto-transition` on the first apply so the status stays in `in_progress` until you've filled in the marker contents. Example:
+   ```bash
+   # First apply: insert markers without transitioning to applied
+   ows apply <changeId> --no-auto-transition --json
+   ```
+   Without this flag, the change will transition to `applied` while the Feature note still contains unfilled `<!-- ADDED ... -->` marker comments, and `ows verify` will then report `UNFILLED_APPLY_MARKER` errors.
+
+   For changes with ONLY programmatic ops (RENAMED/REMOVED), a single plain apply is fine:
    ```bash
    ows apply <changeId> --json
    ```
@@ -60,7 +71,17 @@ Apply a completed Change to canonical Feature notes, updating the wiki's current
    - **MODIFIED**: Inserts a `<!-- MODIFIED by change: <changeId> -->` marker after the requirement heading. The agent must then update the requirement text.
    - **ADDED**: Inserts a `<!-- ADDED by change: <changeId>. Fill in normative statement (SHALL/MUST) and scenarios (WHEN/THEN). -->` marker in the Requirements section. The agent must then write the new requirement content.
 
-5. **Show final state**
+5. **Fill marker contents (if using --no-auto-transition)**
+
+   Open each Feature note listed in `result.modifiedFiles`, find the `<!-- ADDED ... -->` and `<!-- MODIFIED ... -->` marker comments, and replace them with real requirement text (SHALL/MUST normative + WHEN/THEN scenarios). Then remove the marker comment itself.
+
+6. **Finalize apply**
+   ```bash
+   # Second apply: now that markers are filled, transition to applied
+   ows apply <changeId> --json
+   ```
+
+7. **Show final state**
    ```bash
    ows status <changeId>
    ```
